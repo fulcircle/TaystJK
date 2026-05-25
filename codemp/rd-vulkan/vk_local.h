@@ -1000,6 +1000,7 @@ typedef struct {
 	qboolean clearAttachment;		// requires VK_IMAGE_USAGE_TRANSFER_DST_BIT
 	qboolean fboActive;
 	qboolean blitEnabled;
+	qboolean rayQuery;
 
 	qboolean vboWorldActive;
 	qboolean vboGhoul2Active;

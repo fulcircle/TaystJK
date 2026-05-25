@@ -26,6 +26,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "tr_local.h"
 #include "rd-common/tr_public.h"
+#include "vulkan/vulkan_core.h"
 
 unsigned char s_intensitytable[256];
 unsigned char s_gammatable[256];
@@ -47,6 +48,7 @@ PFN_vkGetPhysicalDeviceFormatProperties			qvkGetPhysicalDeviceFormatProperties;
 PFN_vkGetPhysicalDeviceMemoryProperties			qvkGetPhysicalDeviceMemoryProperties;
 PFN_vkGetPhysicalDeviceProperties				qvkGetPhysicalDeviceProperties;
 PFN_vkGetPhysicalDeviceQueueFamilyProperties	qvkGetPhysicalDeviceQueueFamilyProperties;
+PFN_vkGetPhysicalDeviceFeatures2 				qvkGetPhysicalDeviceFeatures2;
 
 
 PFN_vkDestroySurfaceKHR							qvkDestroySurfaceKHR;
@@ -225,11 +227,7 @@ static void vk_create_instance( void )
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "Quake3";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-#ifdef _DEBUG
-	appInfo.apiVersion = VK_API_VERSION_1_1;
-#else
-	appInfo.apiVersion = VK_API_VERSION_1_0;
-#endif
+    appInfo.apiVersion = VK_API_VERSION_1_2;
 	flags = 0;
     count = 0;
     extension_count = 0;
@@ -541,6 +539,9 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 	VkPhysicalDeviceBufferDeviceAddressFeatures devaddr_features;
 	VkPhysicalDevice8BitStorageFeatures storage_8bit_features;
 #endif
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR accel_features;
+	VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features;
+	VkPhysicalDeviceBufferDeviceAddressFeatures rt_bda_features;
 
 	ri.Printf(PRINT_ALL, "selected physical device: %i\n\n", device_index);
 
@@ -585,7 +586,7 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 	// create VkDevice
 	{
 		char *str;
-		const char *device_extension_list[9];
+		const char *device_extension_list[16];
 		uint32_t device_extension_count;
 		const char *ext, *end;
 		const float priority = 1.0;
@@ -600,13 +601,16 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 		qboolean memoryRequirements2 = qfalse;
 		qboolean debugMarker = qfalse;
 		qboolean toolingInfo = qfalse;
+		qboolean accelStructSupported = qfalse;
+		qboolean rayQuerySupported = qfalse;
+		qboolean deferredHostOpsSupported = qfalse;
 #ifdef _DEBUG
 		qboolean timelineSemaphore = qfalse;
 		qboolean memoryModel = qfalse;
 		qboolean devAddrFeat = qfalse;
 		qboolean storage8bit = qfalse;
-		const void** pNextPtr;
 #endif
+		const void** pNextPtr;
 		uint32_t i, len, count = 0;
 
 		VK_CHECK(qvkEnumerateDeviceExtensionProperties(physical_device, NULL, &count, NULL));
@@ -644,6 +648,12 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 			} else if ( strcmp( ext, VK_KHR_8BIT_STORAGE_EXTENSION_NAME ) == 0 ) {
 				storage8bit = qtrue;
 #endif
+			} else if (strcmp( ext, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) == 0) {
+				accelStructSupported = qtrue;
+			} else if (strcmp( ext, VK_KHR_RAY_QUERY_EXTENSION_NAME) == 0) {
+				rayQuerySupported = qtrue;
+			} else if (strcmp (ext, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME) == 0) {
+				deferredHostOpsSupported = qtrue;
 			}
 
 			// add this device extension to glConfig
@@ -659,6 +669,29 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 		}
 
 		free(extension_properties);
+
+		ri.Printf( PRINT_ALL, "...RT extensions: accel_structure=%s, ray_query=%s, deferred_host_ops=%s\n",
+			accelStructSupported ? "yes" : "no",
+			rayQuerySupported ? "yes" : "no",
+			deferredHostOpsSupported ? "yes" : "no");
+
+		{
+			VkPhysicalDeviceRayQueryFeaturesKHR              rq;
+			VkPhysicalDeviceAccelerationStructureFeaturesKHR as;
+			VkPhysicalDeviceFeatures2						 f2;
+			Com_Memset( &rq, 0, sizeof(rq));
+			Com_Memset( &as, 0, sizeof(as));
+			Com_Memset( &f2, 0, sizeof(f2));
+			rq.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+			as.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+			f2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+			as.pNext = &rq;
+			f2.pNext = &as;
+			qvkGetPhysicalDeviceFeatures2(physical_device, &f2);
+			ri.Printf( PRINT_ALL, "...RT features: rayQuery=%s, accelerationStructure=%s\n",
+				rq.rayQuery ? "yes" : "no",
+				as.accelerationStructure ? "yes" : "no");
+		}
 
 		device_extension_count = 0;
 
@@ -707,6 +740,12 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 		}
 #endif // _DEBUG
 
+		vk.rayQuery = ( accelStructSupported && rayQuerySupported && deferredHostOpsSupported) ? qtrue : qfalse;
+		if (vk.rayQuery) {
+			device_extension_list[device_extension_count++] = VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME;
+			device_extension_list[device_extension_count++] = VK_KHR_RAY_QUERY_EXTENSION_NAME;
+			device_extension_list[device_extension_count++] = VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME;
+		}
 		qvkGetPhysicalDeviceFeatures(physical_device, &device_features);
 
 		if (device_features.fillModeNonSolid == VK_FALSE) {
@@ -765,8 +804,9 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 		device_desc.ppEnabledExtensionNames = device_extension_list;
 		device_desc.pEnabledFeatures = &features;
 
-#ifdef _DEBUG
 		pNextPtr = (const void **)&device_desc.pNext;
+
+#ifdef _DEBUG
 
 		if ( timelineSemaphore ) {
 			*pNextPtr = &timeline_semaphore;
@@ -784,7 +824,7 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 			memory_model.vulkanMemoryModelDeviceScope = VK_TRUE;
 			pNextPtr = (const void **)&memory_model.pNext;
 		}
-		if ( devAddrFeat ) {
+		if ( devAddrFeat && !vk.rayQuery ) {
 			*pNextPtr = &devaddr_features;
 			devaddr_features.pNext = NULL;
 			devaddr_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
@@ -803,6 +843,26 @@ static qboolean vk_create_device( VkPhysicalDevice physical_device, int device_i
 			pNextPtr = (const void **)&storage_8bit_features.pNext;
 		}
 #endif
+
+		if (vk.rayQuery) {
+			Com_Memset( &rt_bda_features, 0, sizeof(rt_bda_features));
+			rt_bda_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+			rt_bda_features.bufferDeviceAddress = VK_TRUE;
+			*pNextPtr = &rt_bda_features;
+			pNextPtr = (const void **)&rt_bda_features.pNext;
+
+			Com_Memset( &accel_features, 0, sizeof(accel_features));
+			accel_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+			accel_features.accelerationStructure = VK_TRUE;
+			*pNextPtr = &accel_features;
+			pNextPtr = (const void **)&accel_features.pNext;
+
+			Com_Memset(&ray_query_features, 0, sizeof(ray_query_features));
+			ray_query_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+			ray_query_features.rayQuery = VK_TRUE;
+			*pNextPtr = &ray_query_features;
+			pNextPtr = (const void **)&ray_query_features.pNext;
+		}
 
 		result = qvkCreateDevice(physical_device, &device_desc, NULL, &vk.device);
 		if (result < 0) {
@@ -868,6 +928,7 @@ __initStart:
 	INIT_INSTANCE_FUNCTION(vkEnumeratePhysicalDevices)
 	INIT_INSTANCE_FUNCTION(vkGetDeviceProcAddr)
 	INIT_INSTANCE_FUNCTION(vkGetPhysicalDeviceFeatures)
+	INIT_INSTANCE_FUNCTION(vkGetPhysicalDeviceFeatures2)
 	INIT_INSTANCE_FUNCTION(vkGetPhysicalDeviceFormatProperties)
 	INIT_INSTANCE_FUNCTION(vkGetPhysicalDeviceMemoryProperties)
 	INIT_INSTANCE_FUNCTION(vkGetPhysicalDeviceProperties)
@@ -1092,6 +1153,7 @@ void vk_deinit_library( void )
 	qvkEnumeratePhysicalDevices = NULL;
 	qvkGetDeviceProcAddr = NULL;
 	qvkGetPhysicalDeviceFeatures = NULL;
+	qvkGetPhysicalDeviceFeatures2 = NULL;
 	qvkGetPhysicalDeviceFormatProperties = NULL;
 	qvkGetPhysicalDeviceMemoryProperties = NULL;
 	qvkGetPhysicalDeviceProperties = NULL;
