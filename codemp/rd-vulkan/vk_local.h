@@ -1140,6 +1140,9 @@ void		VBO_PrepareQueues( void );
 void		VBO_RenderIBOItems( void );
 void		VBO_ClearQueue( void );
 
+// rt
+void        vk_release_world_rt( void );
+
 int			get_mdv_stride( void );
 int			get_mdxm_stride( void );
 

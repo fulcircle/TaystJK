@@ -21,7 +21,10 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 ===========================================================================
 */
 
+#include "qcommon/q_shared.h"
 #include "tr_local.h"
+#include "vk_local.h"
+#include "vulkan/vulkan_core.h"
 
 #ifdef _G2_GORE
 #include "G2_gore_r2.h"
@@ -92,7 +95,78 @@ typedef struct vbo_s {
 
 } vbo_t;
 
+typedef struct {
+	VkBuffer	   positionBuffer;
+	VkDeviceMemory positionMemory;
+	VkBuffer       indexBuffer;
+	VkDeviceMemory indexMemory;
+	uint32_t       numVertices;
+	uint32_t       numIndices;
+} world_rt_t;
+
 static vbo_t world_vbo;
+static world_rt_t world_rt;
+
+static void vk_upload_rt_buffer( VkDeviceSize size, const void *src,
+	VkBuffer *outBuffer, VkDeviceMemory *outMemory)
+{
+	VkBufferCreateInfo        desc;
+	VkMemoryAllocateInfo      alloc_info;
+	VkMemoryAllocateFlagsInfo flagsInfo;
+	VkMemoryRequirements      mem_reqs;
+	VkBuffer                  staging;
+	VkDeviceMemory            stagingMem;
+	VkCommandBuffer           cmd;
+	VkBufferCopy              region;
+	void                      *data;
+
+	desc.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	desc.pNext = NULL; desc.flags = 0;
+	desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	desc.queueFamilyIndexCount = 0; desc.pQueueFamilyIndices = NULL;
+	desc.size = size;
+
+	desc.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT
+		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+
+	VK_CHECK ( qvkCreateBuffer( vk.device, &desc, NULL, outBuffer ) );
+
+	qvkGetBufferMemoryRequirements( vk.device, *outBuffer, &mem_reqs );
+
+	flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+	flagsInfo.pNext = NULL;
+	flagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+	flagsInfo.deviceMask = 0;
+
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.pNext = &flagsInfo;
+	alloc_info.allocationSize = mem_reqs.size;
+	alloc_info.memoryTypeIndex = vk_find_memory_type( mem_reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+	VK_CHECK( qvkAllocateMemory( vk.device, &alloc_info, NULL, outMemory ) );
+	qvkBindBufferMemory( vk.device, *outBuffer, *outMemory, 0 );
+
+	desc.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	VK_CHECK( qvkCreateBuffer( vk.device, &desc, NULL, &staging ) );
+	qvkGetBufferMemoryRequirements( vk.device, staging, &mem_reqs );
+	alloc_info.pNext = NULL;
+	alloc_info.allocationSize = mem_reqs.size;
+	alloc_info.memoryTypeIndex = vk_find_memory_type( mem_reqs.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	VK_CHECK( qvkAllocateMemory( vk.device, &alloc_info, NULL, &stagingMem ) );
+	qvkBindBufferMemory( vk.device, staging, stagingMem, 0 );
+
+	VK_CHECK( qvkMapMemory ( vk.device, stagingMem, 0, VK_WHOLE_SIZE, 0, &data ) );
+	memcpy( data, src, (size_t)size );
+	qvkUnmapMemory( vk.device, stagingMem );
+
+	cmd = vk_begin_command_buffer();
+	region.srcOffset = 0; region.dstOffset = 0; region.size = size;
+	qvkCmdCopyBuffer( cmd, staging, *outBuffer, 1, &region );
+	vk_end_command_buffer( cmd, __func__ );
+	qvkDestroyBuffer( vk.device, staging, NULL );
+	qvkFreeMemory( vk.device, stagingMem, NULL );
+}
 
 void VBO_Cleanup(void);
 
@@ -877,40 +951,98 @@ void R_UpdateDynamicBuffer(VkBuffer dstBuffer, VkBuffer srcBuffer, VkDeviceSize 
 	vk_end_command_buffer( cmd, __func__ );
 }
 
-void R_MeasureWorldRTGeometry(msurface_t *surf, int surfCount) {
+void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
 	msurface_t *sf;
-	int i;
-	int numSurfaces = 0, numVertexes = 0, numIndexes = 0;
+	int i, k, type;
+	int numVertexes = 0, numIndexes = 0;
+	vec3_t *positions;
+	uint32_t *indices;
+	uint32_t baseVertex = 0, baseIndex = 0;
+	vec3_t mins, maxs;
 
 	if (!vk.rayQuery) {
 		return;
 	}
 
+	vk_release_world_rt();
+
 	for (i = 0, sf = surf; i < surfCount; i++, sf++) {
 		switch( *sf->data ) {
 			case SF_FACE: {
 				srfSurfaceFace_t *face = (srfSurfaceFace_t *)sf->data;
-				numSurfaces++; numVertexes += face->numPoints; numIndexes += face->numIndices;
+				numVertexes += face->numPoints; numIndexes += face->numIndices;
 				break;
 			}
 			case SF_TRIANGLES: {
 				srfTriangles_t *tris = (srfTriangles_t *)sf->data;
-				numSurfaces++; numVertexes += tris->numVerts; numIndexes += tris->numIndexes;
+				numVertexes += tris->numVerts; numIndexes += tris->numIndexes;
 				break;
 			}
 			case SF_GRID: {
 				srfGridMesh_t *grid = (srfGridMesh_t *)sf->data;
 				int gv, gi;
 				RB_SurfaceGridEstimate(grid, &gv, &gi);
-				numSurfaces++; numVertexes += gv; numIndexes += gi;
+				numVertexes += gv; numIndexes += gi;
 				break;
 			}
 			default:
 				break;
 		}
 	}
-	ri.Printf(PRINT_ALL, "...RT world geom: %d surfaces, %d verts, %d triangles\n",
-			numSurfaces, numVertexes, numIndexes / 3);
+	if (numVertexes == 0) {
+		ri.Printf(PRINT_ALL, "...no RT geometry\n");
+		return;
+	}
+
+	positions = (vec3_t *)ri.Hunk_AllocateTempMemory(numVertexes * sizeof(vec3_t));
+	indices = (uint32_t *)ri.Hunk_AllocateTempMemory(numIndexes * sizeof(uint32_t));
+
+	Com_Memset(&backEnd.viewParms, 0, sizeof(backEnd.viewParms));
+	backEnd.currentEntity = &tr.worldEntity;
+
+	for ( i = 0, sf = surf; i < surfCount; i++, sf++) {
+		type = *sf->data;
+		if (type != SF_FACE && type != SF_TRIANGLES && type != SF_GRID)
+			continue;
+
+		RB_BeginSurface(sf->shader, 0);
+		tess.allowVBO = qfalse;
+		rb_surfaceTable[type]( sf-> data);
+
+		for ( k = 0; k < tess.numVertexes; k++) {
+			VectorCopy(tess.xyz[k], positions[baseVertex + k]);
+		}
+		for ( k = 0; k < tess.numIndexes; k++) {
+			indices[baseIndex + k] = baseVertex + tess.indexes[k];
+		}
+
+		baseVertex += tess.numVertexes;
+		baseIndex += tess.numIndexes;
+		tess.numVertexes = 0;
+		tess.numIndexes = 0;
+	}
+
+	// sanity: bbox of all collected positions
+	ClearBounds(mins, maxs);
+	for ( i = 0; i < (int)baseVertex; i++ ) {
+		AddPointToBounds( positions[i], mins, maxs );
+	}
+
+	ri.Printf( PRINT_ALL, "...RT geom collected: %u verts, %u tris; bbox (%.0f %.0f %.0f)...(%.0f %.0f %.0f)\n",
+			baseVertex, baseIndex / 3,
+			mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2] );
+
+	vk_upload_rt_buffer((VkDeviceSize)baseVertex * sizeof(vec3_t), positions, &world_rt.positionBuffer, &world_rt.positionMemory);
+	vk_upload_rt_buffer( (VkDeviceSize)baseIndex * sizeof(uint32_t), indices, &world_rt.indexBuffer, &world_rt.indexMemory );
+	world_rt.numVertices = baseVertex;
+	world_rt.numIndices = baseIndex;
+
+	ri.Printf( PRINT_ALL, "...RT buffers uploaded: %u verts (%u KB), %u indices (%u KB)\n",
+		baseVertex, (unsigned)(baseVertex * sizeof(vec3_t) / 1024),
+		baseIndex,  (unsigned)(baseIndex * sizeof(uint32_t) / 1024) );
+
+	ri.Hunk_FreeTempMemory( indices );
+	ri.Hunk_FreeTempMemory( positions );
 }
 
 typedef struct mdxm_attributes_s {
@@ -1875,6 +2007,20 @@ void vk_release_world_vbo( void )
 	if ( vk.vbo.buffer_memory )
 		qvkFreeMemory( vk.device, vk.vbo.buffer_memory, NULL );
 	vk.vbo.buffer_memory = VK_NULL_HANDLE;
+}
+
+void vk_release_world_rt( void )
+{
+	if ( world_rt.positionBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.positionBuffer, NULL);
+		qvkFreeMemory( vk.device, world_rt.positionMemory, NULL );
+	}
+	if ( world_rt.indexBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.indexBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.indexMemory, NULL );
+	}
+
+	Com_Memset( &world_rt, 0, sizeof(world_rt) );
 }
 
 qboolean vk_alloc_vbo( const char *name, const byte *vbo_data, int vbo_size )
