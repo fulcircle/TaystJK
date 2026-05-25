@@ -877,6 +877,42 @@ void R_UpdateDynamicBuffer(VkBuffer dstBuffer, VkBuffer srcBuffer, VkDeviceSize 
 	vk_end_command_buffer( cmd, __func__ );
 }
 
+void R_MeasureWorldRTGeometry(msurface_t *surf, int surfCount) {
+	msurface_t *sf;
+	int i;
+	int numSurfaces = 0, numVertexes = 0, numIndexes = 0;
+
+	if (!vk.rayQuery) {
+		return;
+	}
+
+	for (i = 0, sf = surf; i < surfCount; i++, sf++) {
+		switch( *sf->data ) {
+			case SF_FACE: {
+				srfSurfaceFace_t *face = (srfSurfaceFace_t *)sf->data;
+				numSurfaces++; numVertexes += face->numPoints; numIndexes += face->numIndices;
+				break;
+			}
+			case SF_TRIANGLES: {
+				srfTriangles_t *tris = (srfTriangles_t *)sf->data;
+				numSurfaces++; numVertexes += tris->numVerts; numIndexes += tris->numIndexes;
+				break;
+			}
+			case SF_GRID: {
+				srfGridMesh_t *grid = (srfGridMesh_t *)sf->data;
+				int gv, gi;
+				RB_SurfaceGridEstimate(grid, &gv, &gi);
+				numSurfaces++; numVertexes += gv; numIndexes += gi;
+				break;
+			}
+			default:
+				break;
+		}
+	}
+	ri.Printf(PRINT_ALL, "...RT world geom: %d surfaces, %d verts, %d triangles\n",
+			numSurfaces, numVertexes, numIndexes / 3);
+}
+
 typedef struct mdxm_attributes_s {
 	vec4_t	*verts;
 	vec4_t	*normals;

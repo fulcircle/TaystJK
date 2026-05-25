@@ -2401,6 +2401,7 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index )
 #ifdef USE_VBO
 	R_BuildWorldVBO(s_worldData.surfaces, s_worldData.numsurfaces);
 #endif
+	R_MeasureWorldRTGeometry(s_worldData.surfaces, s_worldData.numsurfaces);
 
 	worldData.dataSize = (byte *)Hunk_Alloc(0, h_low) - startMarker;
 
