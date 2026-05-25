@@ -25,6 +25,8 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_local.h"
 #include "vk_local.h"
 #include "vulkan/vulkan_core.h"
+#include <cstddef>
+#include <cstdint>
 
 #ifdef _G2_GORE
 #include "G2_gore_r2.h"
@@ -102,10 +104,49 @@ typedef struct {
 	VkDeviceMemory indexMemory;
 	uint32_t       numVertices;
 	uint32_t       numIndices;
+
+	// BLAS
+	VkBuffer                   asBuffer;
+	VkDeviceMemory 			   asMemory;
+	VkAccelerationStructureKHR blas;
+	VkDeviceAddress 		   blasAddress;
+
 } world_rt_t;
 
 static vbo_t world_vbo;
 static world_rt_t world_rt;
+
+static void vk_create_rt_storage( VkDeviceSize size, VkBufferUsageFlags usage,
+								  qboolean deviceAddress, VkBuffer *outBuffer, VkDeviceMemory *outMemory )
+{
+	VkBufferCreateInfo desc;
+	VkMemoryAllocateInfo alloc_info;
+	VkMemoryAllocateFlagsInfo flagsInfo;
+	VkMemoryRequirements mem_reqs;
+
+	desc.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	desc.pNext = NULL; desc.flags = 0;
+	desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	desc.queueFamilyIndexCount = 0; desc.pQueueFamilyIndices = NULL;
+	desc.size = size;
+	desc.usage = usage;
+	VK_CHECK( qvkCreateBuffer( vk.device, &desc, NULL, outBuffer ) );
+
+	qvkGetBufferMemoryRequirements( vk.device, *outBuffer, &mem_reqs );
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.pNext = NULL;
+	alloc_info.allocationSize = mem_reqs.size;
+	alloc_info.memoryTypeIndex = vk_find_memory_type(mem_reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	if ( deviceAddress ) {
+		flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+		flagsInfo.pNext = NULL;
+		flagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+		flagsInfo.deviceMask = 0;
+		alloc_info.pNext = &flagsInfo;
+	}
+	VK_CHECK( qvkAllocateMemory ( vk.device, &alloc_info, NULL, outMemory ) );
+	qvkBindBufferMemory( vk.device, *outBuffer, *outMemory, 0 );
+}
 
 static void vk_upload_rt_buffer( VkDeviceSize size, const void *src,
 	VkBuffer *outBuffer, VkDeviceMemory *outMemory)
@@ -166,6 +207,111 @@ static void vk_upload_rt_buffer( VkDeviceSize size, const void *src,
 	vk_end_command_buffer( cmd, __func__ );
 	qvkDestroyBuffer( vk.device, staging, NULL );
 	qvkFreeMemory( vk.device, stagingMem, NULL );
+}
+
+static void vk_build_world_blas ( void ) {
+	VkBufferDeviceAddressInfo                   addrInfo;
+	VkDeviceAddress                             posAddr, idxAddr;
+	VkAccelerationStructureGeometryKHR          geom;
+	VkAccelerationStructureBuildGeometryInfoKHR buildInfo;
+	VkAccelerationStructureBuildSizesInfoKHR    sizeInfo;
+	uint32_t                                    primCount;
+
+	if ( !vk.rayQuery || world_rt.numIndices == 0)
+		return;
+
+	addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	addrInfo.pNext = NULL;
+	addrInfo.buffer = world_rt.positionBuffer;
+	posAddr = qvkGetBufferDeviceAddress( vk.device, &addrInfo );
+	addrInfo.buffer = world_rt.indexBuffer;
+	idxAddr = qvkGetBufferDeviceAddress( vk.device, &addrInfo );
+
+	Com_Memset( &geom, 0, sizeof(geom) );
+	geom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+	geom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+	geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+	geom.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+	geom.geometry.triangles.vertexFormat =  VK_FORMAT_R32G32B32_SFLOAT;
+	geom.geometry.triangles.vertexData.deviceAddress = posAddr;
+	geom.geometry.triangles.vertexStride = sizeof(vec3_t);
+	geom.geometry.triangles.maxVertex = world_rt.numVertices - 1;
+	geom.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+	geom.geometry.triangles.indexData.deviceAddress = idxAddr;
+
+	Com_Memset(&buildInfo, 0, sizeof(buildInfo));
+	buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+	buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+	buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	buildInfo.geometryCount = 1;
+	buildInfo.pGeometries = &geom;
+
+	primCount = world_rt.numIndices / 3;
+	Com_Memset( &sizeInfo, 0, sizeof(sizeInfo) );
+	sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+	qvkGetAccelerationStructureBuildSizesKHR( vk.device,
+		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+		&buildInfo, &primCount, &sizeInfo);
+
+	ri.Printf( PRINT_ALL, "...BLAS sizes: structure=%u bytes, scratch=%u bytes (%u tris)\n",
+		(unsigned)sizeInfo.accelerationStructureSize,
+		(unsigned)sizeInfo.buildScratchSize,
+		primCount );
+
+	vk_create_rt_storage( sizeInfo.accelerationStructureSize,
+			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+			qfalse, &world_rt.asBuffer, &world_rt.asMemory);
+	{
+		VkAccelerationStructureCreateInfoKHR asCreate;
+		Com_Memset( &asCreate, 0, sizeof(asCreate) );
+		asCreate.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+		asCreate.buffer = world_rt.asBuffer;
+		asCreate.size = sizeInfo.accelerationStructureSize;
+		asCreate.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		VK_CHECK( qvkCreateAccelerationStructureKHR(vk.device, &asCreate, NULL, &world_rt.blas ) );
+	}
+
+	{
+		VkBuffer       scratchBuffer;
+		VkDeviceMemory scratchMemory;
+		VkBufferDeviceAddressInfo                sAddr;
+		VkAccelerationStructureBuildRangeInfoKHR range;
+		const VkAccelerationStructureBuildRangeInfoKHR *pRange = &range;
+		VkAccelerationStructureDeviceAddressInfoKHR blasAddrInfo;
+		VkCommandBuffer cmd;
+
+		vk_create_rt_storage( sizeInfo.buildScratchSize,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			qtrue, &scratchBuffer, &scratchMemory );
+
+		sAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		sAddr.pNext = NULL;
+		sAddr.buffer = scratchBuffer;
+
+		buildInfo.dstAccelerationStructure = world_rt.blas;
+		buildInfo.scratchData.deviceAddress = qvkGetBufferDeviceAddress( vk.device, &sAddr );
+
+		range.primitiveCount = primCount;
+		range.primitiveOffset = 0;
+		range.firstVertex = 0;
+		range.transformOffset = 0;
+
+		cmd = vk_begin_command_buffer();
+		qvkCmdBuildAccelerationStructuresKHR( cmd, 1, &buildInfo, &pRange );
+		vk_end_command_buffer( cmd, __func__ );
+
+		qvkDestroyBuffer( vk.device, scratchBuffer, NULL );
+		qvkFreeMemory( vk.device, scratchMemory, NULL );
+
+		Com_Memset( &blasAddrInfo, 0, sizeof(blasAddrInfo) );
+		blasAddrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+		blasAddrInfo.accelerationStructure = world_rt.blas;
+		world_rt.blasAddress = qvkGetAccelerationStructureDeviceAddressKHR( vk.device, &blasAddrInfo );
+
+	}
+
+	ri.Printf( PRINT_ALL, "...BLAS built: address=0x%llx\n", (unsigned long long)world_rt.blasAddress );
 }
 
 void VBO_Cleanup(void);
@@ -1043,6 +1189,8 @@ void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
 
 	ri.Hunk_FreeTempMemory( indices );
 	ri.Hunk_FreeTempMemory( positions );
+
+	vk_build_world_blas();
 }
 
 typedef struct mdxm_attributes_s {
@@ -2011,6 +2159,14 @@ void vk_release_world_vbo( void )
 
 void vk_release_world_rt( void )
 {
+	if ( world_rt.blas ) {
+		qvkDestroyAccelerationStructureKHR( vk.device, world_rt.blas, NULL );
+	}
+	if ( world_rt.asBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.asBuffer, NULL );
+		qvkFreeMemory ( vk.device, world_rt.asMemory, NULL );
+	}
+
 	if ( world_rt.positionBuffer ) {
 		qvkDestroyBuffer( vk.device, world_rt.positionBuffer, NULL);
 		qvkFreeMemory( vk.device, world_rt.positionMemory, NULL );

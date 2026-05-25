@@ -48,6 +48,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 //#define VK_NO_PROTOTYPES
 #include "vulkan/vulkan.h"
+#include "vulkan/vulkan_core.h"
 
 #if defined (_DEBUG)
 #if defined (_WIN32)
@@ -416,6 +417,13 @@ extern PFN_vkGetImageMemoryRequirements2KHR				qvkGetImageMemoryRequirements2KHR
 extern PFN_vkDebugMarkerSetObjectNameEXT				qvkDebugMarkerSetObjectNameEXT;
 
 extern PFN_vkCmdDrawIndexedIndirect						qvkCmdDrawIndexedIndirect;
+
+extern PFN_vkGetBufferDeviceAddress                     qvkGetBufferDeviceAddress;
+extern PFN_vkGetAccelerationStructureBuildSizesKHR      qvkGetAccelerationStructureBuildSizesKHR;
+extern PFN_vkCreateAccelerationStructureKHR             qvkCreateAccelerationStructureKHR;
+extern PFN_vkDestroyAccelerationStructureKHR            qvkDestroyAccelerationStructureKHR;
+extern PFN_vkCmdBuildAccelerationStructuresKHR          qvkCmdBuildAccelerationStructuresKHR;
+extern PFN_vkGetAccelerationStructureDeviceAddressKHR   qvkGetAccelerationStructureDeviceAddressKHR;
 
 typedef float mat4_t[16];
 typedef float mat3x4_t[12];

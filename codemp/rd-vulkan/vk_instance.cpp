@@ -57,6 +57,13 @@ PFN_vkGetPhysicalDeviceSurfaceFormatsKHR		qvkGetPhysicalDeviceSurfaceFormatsKHR;
 PFN_vkGetPhysicalDeviceSurfacePresentModesKHR	qvkGetPhysicalDeviceSurfacePresentModesKHR;
 PFN_vkGetPhysicalDeviceSurfaceSupportKHR		qvkGetPhysicalDeviceSurfaceSupportKHR;
 
+PFN_vkGetBufferDeviceAddress                    qvkGetBufferDeviceAddress;
+PFN_vkGetAccelerationStructureBuildSizesKHR     qvkGetAccelerationStructureBuildSizesKHR;
+PFN_vkCreateAccelerationStructureKHR            qvkCreateAccelerationStructureKHR;
+PFN_vkDestroyAccelerationStructureKHR           qvkDestroyAccelerationStructureKHR;
+PFN_vkCmdBuildAccelerationStructuresKHR         qvkCmdBuildAccelerationStructuresKHR;
+PFN_vkGetAccelerationStructureDeviceAddressKHR  qvkGetAccelerationStructureDeviceAddressKHR;
+
 #ifdef USE_VK_VALIDATION
 	#ifdef USE_DEBUG_REPORT
 		PFN_vkCreateDebugReportCallbackEXT		qvkCreateDebugReportCallbackEXT;
@@ -1122,6 +1129,16 @@ __initStart:
 	INIT_DEVICE_FUNCTION(vkGetSwapchainImagesKHR)
 	INIT_DEVICE_FUNCTION(vkQueuePresentKHR)
 
+	if (vk.rayQuery) {
+		INIT_DEVICE_FUNCTION_EXT(vkGetBufferDeviceAddress);
+		INIT_DEVICE_FUNCTION_EXT(vkGetAccelerationStructureBuildSizesKHR);
+		INIT_DEVICE_FUNCTION_EXT(vkCreateAccelerationStructureKHR);
+		INIT_DEVICE_FUNCTION_EXT(vkDestroyAccelerationStructureKHR);
+		INIT_DEVICE_FUNCTION_EXT(vkCmdBuildAccelerationStructuresKHR);
+		INIT_DEVICE_FUNCTION_EXT(vkGetAccelerationStructureDeviceAddressKHR);
+		ri.Printf( PRINT_ALL, "...RT functions: %s\n", qvkCreateAccelerationStructureKHR ? "loaded" : "MISSING" );
+	}
+
 	if (vk.dedicatedAllocation) {
 		INIT_DEVICE_FUNCTION_EXT(vkGetBufferMemoryRequirements2KHR);
 		INIT_DEVICE_FUNCTION_EXT(vkGetImageMemoryRequirements2KHR);
@@ -1261,6 +1278,15 @@ void vk_deinit_library( void )
 	qvkDebugMarkerSetObjectNameEXT = NULL;
 
 	qvkCmdDrawIndexedIndirect = NULL;
+
+	if (vk.rayQuery) {
+		qvkGetBufferDeviceAddress = NULL;
+		qvkGetAccelerationStructureBuildSizesKHR = NULL;
+		qvkCreateAccelerationStructureKHR = NULL;
+		qvkDestroyAccelerationStructureKHR = NULL;
+		qvkCmdBuildAccelerationStructuresKHR = NULL;
+		qvkGetAccelerationStructureDeviceAddressKHR = NULL;
+	}
 }
 
 #define FORMAT_DEPTH(format, r_bits, g_bits, b_bits) case(VK_FORMAT_##format): *r = r_bits; *b = b_bits; *g = g_bits; return qtrue;
