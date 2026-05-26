@@ -111,6 +111,12 @@ typedef struct {
 	VkAccelerationStructureKHR blas;
 	VkDeviceAddress 		   blasAddress;
 
+	// TLAS
+	VkAccelerationStructureKHR tlas;
+	VkBuffer				   tlasBuffer;
+	VkDeviceMemory             tlasMemory;
+
+
 } world_rt_t;
 
 static vbo_t world_vbo;
@@ -312,6 +318,105 @@ static void vk_build_world_blas ( void ) {
 	}
 
 	ri.Printf( PRINT_ALL, "...BLAS built: address=0x%llx\n", (unsigned long long)world_rt.blasAddress );
+}
+
+static void vk_build_world_tlas ( void )
+{
+	VkAccelerationStructureInstanceKHR          instance;
+	VkBuffer                                    instBuffer;
+	VkDeviceMemory                              instMemory;
+	VkBufferDeviceAddressInfo                   addrInfo;
+	VkAccelerationStructureGeometryKHR          geom;
+	VkAccelerationStructureBuildGeometryInfoKHR buildInfo;
+	VkAccelerationStructureBuildSizesInfoKHR    sizeInfo;
+	uint32_t                                    instCount = 1;
+
+	if ( !vk.rayQuery || world_rt.blas == VK_NULL_HANDLE ) {
+		return;
+	}
+
+	Com_Memset( &instance, 0, sizeof(instance) );
+
+	// identity 3x4 (row-major)
+	instance.transform.matrix[0][0] = 1.0f;
+	instance.transform.matrix[1][1] = 1.0f;
+	instance.transform.matrix[2][2] = 1.0f;
+	instance.mask = 0xFF;
+	instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+	instance.accelerationStructureReference = world_rt.blasAddress;
+
+	vk_upload_rt_buffer( sizeof(instance), &instance, &instBuffer, &instMemory );
+	addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	addrInfo.pNext = NULL;
+	addrInfo.buffer = instBuffer;
+
+	Com_Memset( &geom, 0, sizeof(geom) );
+	geom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+	geom.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+	geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+	geom.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+	geom.geometry.instances.arrayOfPointers = VK_FALSE;
+	geom.geometry.instances.data.deviceAddress = qvkGetBufferDeviceAddress( vk.device, &addrInfo );
+
+	Com_Memset( &buildInfo, 0, sizeof(buildInfo) );
+	buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+	buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+	buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	buildInfo.geometryCount = 1;
+	buildInfo.pGeometries = &geom;
+
+	Com_Memset( &sizeInfo, 0, sizeof(sizeInfo) );
+	sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+	qvkGetAccelerationStructureBuildSizesKHR( vk.device,
+		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &instCount, &sizeInfo );
+
+	vk_create_rt_storage( sizeInfo.accelerationStructureSize,
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+		qfalse, &world_rt.tlasBuffer, &world_rt.tlasMemory );
+	{
+		VkAccelerationStructureCreateInfoKHR asCreate;
+		Com_Memset( &asCreate, 0, sizeof(asCreate) );
+		asCreate.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+		asCreate.buffer = world_rt.tlasBuffer;
+		asCreate.size = sizeInfo.accelerationStructureSize;
+		asCreate.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+		VK_CHECK( qvkCreateAccelerationStructureKHR (vk.device, &asCreate, NULL, &world_rt.tlas ) );
+	}
+
+	{
+		VkBuffer scratchBuffer; VkDeviceMemory scratchMemory;
+		VkBufferDeviceAddressInfo sAddr;
+		VkAccelerationStructureBuildRangeInfoKHR range;
+		const VkAccelerationStructureBuildRangeInfoKHR *pRange = &range;
+		VkCommandBuffer cmd;
+
+		vk_create_rt_storage( sizeInfo.buildScratchSize,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			qtrue, &scratchBuffer, &scratchMemory);
+		sAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		sAddr.pNext = NULL;
+		sAddr.buffer = scratchBuffer;
+
+		buildInfo.dstAccelerationStructure = world_rt.tlas;
+		buildInfo.scratchData.deviceAddress = qvkGetBufferDeviceAddress( vk.device, &sAddr );
+
+		range.primitiveCount = 1;
+		range.primitiveOffset = 0; range.firstVertex = 0; range.transformOffset = 0;
+
+		cmd = vk_begin_command_buffer();
+		qvkCmdBuildAccelerationStructuresKHR( cmd, 1, &buildInfo, &pRange);
+		vk_end_command_buffer( cmd, __func__ );
+
+		qvkDestroyBuffer( vk.device, scratchBuffer, NULL );
+		qvkFreeMemory( vk.device, scratchMemory, NULL );
+	}
+
+	qvkDestroyBuffer( vk.device, instBuffer, NULL );
+	qvkFreeMemory( vk.device, instMemory, NULL );
+
+	ri.Printf( PRINT_ALL, "...TLAS built (1 instance)\n" );
+
 }
 
 void VBO_Cleanup(void);
@@ -1191,6 +1296,7 @@ void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
 	ri.Hunk_FreeTempMemory( positions );
 
 	vk_build_world_blas();
+	vk_build_world_tlas();
 }
 
 typedef struct mdxm_attributes_s {
@@ -2159,6 +2265,15 @@ void vk_release_world_vbo( void )
 
 void vk_release_world_rt( void )
 {
+
+	if ( world_rt.tlas ) {
+		qvkDestroyAccelerationStructureKHR ( vk.device, world_rt.tlas, NULL );
+	}
+	if (world_rt.tlasBuffer) {
+		qvkDestroyBuffer( vk.device, world_rt.tlasBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.tlasMemory, NULL );
+	}
+
 	if ( world_rt.blas ) {
 		qvkDestroyAccelerationStructureKHR( vk.device, world_rt.blas, NULL );
 	}
