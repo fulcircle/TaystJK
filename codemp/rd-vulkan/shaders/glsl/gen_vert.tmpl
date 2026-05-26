@@ -175,6 +175,8 @@ out gl_PerVertex {
 	vec4 gl_Position;
 };
 
+layout(location = 9) out vec3 var_WorldPos;
+
 #if defined(USE_VBO_MODEL)
 vec4 CalcColor( int index, in vec3 position, in vec3 normal ) {
 	vec4 color = ( u_bundle[index].vertColor * vec4( 0.0 ) ) + u_bundle[index].baseColor;		// skip vertColor?
@@ -473,6 +475,7 @@ void main() {
 #endif
 
 	gl_Position = mvp * vec4(position, 1.0);
+	var_WorldPos = position;
 
 #ifdef USE_ENV
 	#if defined(USE_VBO_MODEL)

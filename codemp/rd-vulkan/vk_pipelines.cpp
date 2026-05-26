@@ -22,6 +22,8 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "tr_local.h"
+#include "vk_local.h"
+#include "vulkan/vulkan_core.h"
 
 #define ALLOC_SPEC_ENTRY( arr, index, struct_type, struct_data, member ) \
     arr[index].constantID = (index); \
@@ -88,9 +90,10 @@ void vk_create_descriptor_layout( void )
     // Like command buffers, descriptor sets are allocated from a pool. 
     // So we must first create the Descriptor pool.
     {
-        VkDescriptorPoolSize pool_size[3];
+        VkDescriptorPoolSize pool_size[4];
         VkDescriptorPoolCreateInfo desc;
         uint32_t i, maxSets;
+        uint32_t poolCount = 3;
 
         pool_size[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         pool_size[0].descriptorCount = MAX_DRAWIMAGES + 1 + 1 + 1 + ( VK_NUM_BLUR_PASSES * 4 ) + 1;
@@ -104,7 +107,13 @@ void vk_create_descriptor_layout( void )
         pool_size[2].descriptorCount += (MAX_SUB_BSP + 1);
 #endif
 
-        for (i = 0, maxSets = 0; i < ARRAY_LEN(pool_size); i++) {
+		if (vk.rayQuery ) {
+			pool_size[3].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+			pool_size[3].descriptorCount = 1;
+			poolCount = 4;
+		}
+
+        for (i = 0, maxSets = 0; i < poolCount; i++) {
             maxSets += pool_size[i].descriptorCount;
         }
 
@@ -113,7 +122,7 @@ void vk_create_descriptor_layout( void )
         //desc.flags = 0; // used by the cinematic images
         desc.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; // used by the cinematic images
         desc.maxSets = maxSets;
-        desc.poolSizeCount = ARRAY_LEN(pool_size);
+        desc.poolSizeCount = poolCount;
         desc.pPoolSizes = pool_size;
         VK_CHECK(qvkCreateDescriptorPool(vk.device, &desc, NULL, &vk.descriptor_pool));
     }
@@ -123,6 +132,10 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_sampler, qfalse );
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_uniform, qtrue );
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
+
+        if ( vk.rayQuery ) {
+	       	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_as, qfalse);
+        }
     }
 }
 
@@ -151,12 +164,25 @@ void vk_create_pipeline_layout( void )
     desc.pSetLayouts = set_layouts;
     desc.pushConstantRangeCount = 1;
     desc.pPushConstantRanges = &push_range;
+
+    if ( vk.rayQuery && vk.maxBoundDescriptorSets > VK_DESC_COUNT ) {
+    	set_layouts[VK_DESC_AS] = vk.set_layout_as;
+     	desc.setLayoutCount = VK_DESC_COUNT + 1;
+    }
+
     VK_CHECK(qvkCreatePipelineLayout(vk.device, &desc, NULL, &vk.pipeline_layout));
     VK_SET_OBJECT_NAME(vk.pipeline_layout, "pipeline layout - main", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT);
 
 #ifdef USE_VBO_SS
     // surface sprites ssbo
+    desc.setLayoutCount = (vk.maxBoundDescriptorSets >= VK_DESC_COUNT) ? VK_DESC_COUNT : 4;
     set_layouts[1] = vk.set_layout_storage; 
+
+    if ( vk.rayQuery && vk.maxBoundDescriptorSets > VK_DESC_COUNT ) {
+	   	set_layouts[VK_DESC_AS] = vk.set_layout_as;
+		desc.setLayoutCount = VK_DESC_COUNT + 1;
+    }
+
     VK_CHECK(qvkCreatePipelineLayout(vk.device, &desc, NULL, &vk.pipeline_layout_surface_sprite));
     VK_SET_OBJECT_NAME(vk.pipeline_layout_surface_sprite, "pipeline layout - surface sprites", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT);
 #endif

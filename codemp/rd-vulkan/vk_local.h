@@ -97,6 +97,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define VK_DESC_TEXTURE2				3
 #define VK_DESC_FOG_COLLAPSE			4
 #define VK_DESC_COUNT					5
+#define VK_DESC_AS						VK_DESC_COUNT
 
 #define VK_DESC_TEXTURE_BASE			VK_DESC_TEXTURE0
 #define VK_DESC_FOG_ONLY				VK_DESC_TEXTURE1
@@ -893,6 +894,9 @@ typedef struct {
 	VkDescriptorSetLayout	set_layout_sampler;		// combined image sampler
 	VkDescriptorSetLayout	set_layout_uniform;		// dynamic uniform buffer
 	VkDescriptorSetLayout	set_layout_storage;		// feedback buffer
+
+	VkDescriptorSetLayout   set_layout_as;          // rt acceleration structure
+	VkDescriptorSet         descriptor_as;          // rt TLAS descriptor
 
 	// pipeline(s)
 	VkPipelineLayout pipeline_layout;				// default shaders

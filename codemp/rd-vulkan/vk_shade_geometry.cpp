@@ -22,6 +22,8 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "tr_local.h"
+#include "vk_local.h"
+#include "vulkan/vulkan_core.h"
 
 static VkBuffer shade_bufs[10];
 static int bind_base;
@@ -652,6 +654,16 @@ void vk_init_descriptors( void ) {
 
 		vk_update_attachment_descriptors();
 	}
+
+	if ( vk.rayQuery ) {
+		alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		alloc.pNext = NULL;
+		alloc.descriptorPool = vk.descriptor_pool;
+		alloc.descriptorSetCount = 1;
+		alloc.pSetLayouts = &vk.set_layout_as;
+		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_as ) );
+		VK_SET_OBJECT_NAME( vk.descriptor_as, "rt acceleration structure descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
+	}
 }
 
 void vk_create_indirect_buffer( VkDeviceSize size )
@@ -829,6 +841,11 @@ void vk_bind_descriptor_sets( void )
 
 	qvkCmdBindDescriptorSets(vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 		vk.pipeline_layout, start, count, vk.cmd->descriptor_set.current + start, offset_count, offsets);
+
+	if ( vk.rayQuery ) {
+		qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			vk.pipeline_layout, VK_DESC_AS, 1, &vk.descriptor_as, 0, NULL );
+	}
 
 	vk.cmd->descriptor_set.end = 0;
 	vk.cmd->descriptor_set.start = ~0U;

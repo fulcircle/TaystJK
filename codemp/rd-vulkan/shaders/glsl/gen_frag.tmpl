@@ -1,4 +1,5 @@
-#version 450
+#version 460
+#extension GL_EXT_ray_query : require
 
 #if defined(USE_VBO_GHOUL2) || defined(USE_VBO_MDV)
 	#define USE_VBO_MODEL
@@ -135,6 +136,7 @@ layout(set = 3, binding = 0) uniform sampler2D texture2;
 #ifdef USE_FOG
 layout(set = 4, binding = 0) uniform sampler2D fog_texture;
 #endif
+layout(set = 5, binding = 0) uniform accelerationStructureEXT u_tlas;
 
 #ifdef USE_CLX_IDENT
 // fixed identity (1.0) color for all textures
@@ -170,6 +172,8 @@ layout(depth_less) out float gl_FragDepth;
 layout(location = 0) out vec4 out_color;
 #endif
 
+layout(location = 9) in vec3 var_WorldPos;
+
 #ifdef USE_ATEST
 layout (constant_id = 0) const int alpha_test_func = 0;
 layout (constant_id = 1) const float alpha_test_value = 0.0;
@@ -194,6 +198,8 @@ layout (constant_id = 10) const float identity_alpha = 1.0;
 #ifdef USE_FOG
 layout (constant_id = 11) const int acff = 0; // NONE, RGB, RGBA, ALPHA
 #endif
+
+layout (constant_id = 12) const int rt_shadow = 1;
 
 #ifdef USE_ATEST
 float CorrectAlpha(float threshold, float alpha, vec2 tc)
@@ -269,6 +275,24 @@ float CorrectAlpha(float threshold, float alpha, vec2 tc)
 		return vec4(fog.color.rgb * fogDistanceVector[2], 1.0 - clamp(exp(-(z * z)), 0.0, 1.0));
 	}
 #endif
+
+float traceShadow( vec3 worldPos ) {
+	const vec3 lightPos = vec3( 192.0, 0.0, 224.0 ); // test map light 2
+
+	vec3 toLight = lightPos - worldPos;
+	float dist = length ( toLight );
+	vec3 dir = toLight / dist;
+
+	rayQueryEXT rq;
+	rayQueryInitializeEXT ( rq, u_tlas,
+		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
+		0xFFu, worldPos, 1.0, dir, dist - 1.0 );
+
+	while ( rayQueryProceedEXT ( rq ) ) {}
+
+	return ( rayQueryGetIntersectionTypeEXT (rq, true) ==
+		gl_RayQueryCommittedIntersectionNoneEXT ) ? 1.0 : 0.0; // 1 = lit, 0 = occluded
+}
 
 void main() {
 	vec4 diffuse;
@@ -674,6 +698,10 @@ void main() {
 
 	gl_FragDepth = gl_FragCoord.z;
 #else
+
+if (rt_shadow == 1) {
+	base.rgb *= traceShadow( var_WorldPos );
+}
 
 	out_color = base;
 #endif

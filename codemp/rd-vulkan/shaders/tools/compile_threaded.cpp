@@ -97,7 +97,7 @@ static std::string create_compiler_cmd( ShaderTask* task, bool silent = true)
 
     const char *silent_flag = silent ? "-s " : "";
 
-    snprintf(cmd, sizeof(cmd), "\"%s\" %s -S %s -V -o %s %s %s",
+    snprintf(cmd, sizeof(cmd), "\"%s\" %s -S %s -V --target-env vulkan1.2 -o %s %s %s",
         compiler.base_path.c_str(),
         silent_flag,
         task->stage,

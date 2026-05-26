@@ -266,8 +266,8 @@ static void vk_build_world_blas ( void ) {
 		primCount );
 
 	vk_create_rt_storage( sizeInfo.accelerationStructureSize,
-			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-			qfalse, &world_rt.asBuffer, &world_rt.asMemory);
+			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			qtrue, &world_rt.asBuffer, &world_rt.asMemory);
 	{
 		VkAccelerationStructureCreateInfoKHR asCreate;
 		Com_Memset( &asCreate, 0, sizeof(asCreate) );
@@ -414,6 +414,29 @@ static void vk_build_world_tlas ( void )
 
 	qvkDestroyBuffer( vk.device, instBuffer, NULL );
 	qvkFreeMemory( vk.device, instMemory, NULL );
+
+	{
+		VkWriteDescriptorSetAccelerationStructureKHR asInfo;
+		VkWriteDescriptorSet write;
+
+		asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+		asInfo.pNext = NULL;
+		asInfo.accelerationStructureCount = 1;
+		asInfo.pAccelerationStructures = &world_rt.tlas;
+
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.pNext = &asInfo;
+		write.dstSet = vk.descriptor_as;
+		write.dstBinding = 0;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+		write.pImageInfo = NULL;
+		write.pBufferInfo = NULL;
+		write.pTexelBufferView = NULL;
+
+		qvkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
+	}
 
 	ri.Printf( PRINT_ALL, "...TLAS built (1 instance)\n" );
 
