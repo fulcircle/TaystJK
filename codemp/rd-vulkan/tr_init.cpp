@@ -1105,6 +1105,9 @@ void R_Init( void ) {
 	vk_release_model_vbo();
 #endif
 
+	if ( vk.rayQuery )
+		vk_release_world_rt();
+
 	R_Set2DRatio();
 	R_InitImages();	
 

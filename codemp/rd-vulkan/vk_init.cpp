@@ -652,6 +652,9 @@ void vk_shutdown( void )
 	vk_release_model_vbo();
 #endif
 
+	if ( vk.rayQuery )
+		vk_release_world_rt();
+
 	vk_clean_staging_buffer();
 
 	vk_release_geometry_buffers();
