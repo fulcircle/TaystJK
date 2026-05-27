@@ -663,6 +663,9 @@ void vk_init_descriptors( void ) {
 		alloc.pSetLayouts = &vk.set_layout_as;
 		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_as ) );
 		VK_SET_OBJECT_NAME( vk.descriptor_as, "rt acceleration structure descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
+
+		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_as_empty ) );
+		VK_SET_OBJECT_NAME( vk.descriptor_as_empty, "rt empty acceleration structure descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
 	}
 }
 
@@ -843,8 +846,11 @@ void vk_bind_descriptor_sets( void )
 		vk.pipeline_layout, start, count, vk.cmd->descriptor_set.current + start, offset_count, offsets);
 
 	if ( vk.rayQuery ) {
+		// world surfaces trace the real TLAS; non-world (models/2D) get the empty TLAS so rays always miss
+		VkDescriptorSet asSet = ( backEnd.currentEntity == &tr.worldEntity )
+			? vk.descriptor_as : vk.descriptor_as_empty;
 		qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			vk.pipeline_layout, VK_DESC_AS, 1, &vk.descriptor_as, 0, NULL );
+			vk.pipeline_layout, VK_DESC_AS, 1, &asSet, 0, NULL );
 	}
 
 	vk.cmd->descriptor_set.end = 0;

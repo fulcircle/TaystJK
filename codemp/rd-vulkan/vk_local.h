@@ -896,7 +896,8 @@ typedef struct {
 	VkDescriptorSetLayout	set_layout_storage;		// feedback buffer
 
 	VkDescriptorSetLayout   set_layout_as;          // rt acceleration structure
-	VkDescriptorSet         descriptor_as;          // rt TLAS descriptor
+	VkDescriptorSet         descriptor_as;          // rt TLAS descriptor (world)
+	VkDescriptorSet         descriptor_as_empty;    // rt empty TLAS - bound for non-world draws
 
 	// pipeline(s)
 	VkPipelineLayout pipeline_layout;				// default shaders

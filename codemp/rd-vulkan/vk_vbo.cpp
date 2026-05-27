@@ -117,6 +117,11 @@ typedef struct {
 	VkDeviceMemory             tlasMemory;
 
 
+	// empty TLAS (a mask=0 instance) bound for non-world draws so rays always miss
+	VkAccelerationStructureKHR tlasEmpty;
+	VkBuffer				   tlasEmptyBuffer;
+	VkDeviceMemory             tlasEmptyMemory;
+
 } world_rt_t;
 
 static vbo_t world_vbo;
@@ -436,6 +441,95 @@ static void vk_build_world_tlas ( void )
 		write.pTexelBufferView = NULL;
 
 		qvkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
+	}
+
+	// --- empty TLAS: same build, but the single instance's mask is 0, so any ray
+	// (cullMask 0xFF) is culled -> always a miss. Bound for non-world draws (models/2D)
+	// whose var_WorldPos isn't world space, so they get no RT shadow.
+	{
+		VkAccelerationStructureInstanceKHR       einst = instance;
+		VkBuffer                                 einstBuffer;
+		VkDeviceMemory                           einstMemory;
+		VkBufferDeviceAddressInfo                eAddr;
+		VkAccelerationStructureBuildSizesInfoKHR eSize;
+		uint32_t                                 eCount = 1;
+
+		einst.mask = 0;
+		vk_upload_rt_buffer( sizeof(einst), &einst, &einstBuffer, &einstMemory );
+		eAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		eAddr.pNext = NULL;
+		eAddr.buffer = einstBuffer;
+		geom.geometry.instances.data.deviceAddress = qvkGetBufferDeviceAddress( vk.device, &eAddr );
+
+		Com_Memset( &eSize, 0, sizeof(eSize) );
+		eSize.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+		qvkGetAccelerationStructureBuildSizesKHR( vk.device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &eCount, &eSize );
+
+		vk_create_rt_storage( eSize.accelerationStructureSize,
+			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+			qfalse, &world_rt.tlasEmptyBuffer, &world_rt.tlasEmptyMemory );
+		{
+			VkAccelerationStructureCreateInfoKHR ec;
+			Com_Memset( &ec, 0, sizeof(ec) );
+			ec.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+			ec.buffer = world_rt.tlasEmptyBuffer;
+			ec.size = eSize.accelerationStructureSize;
+			ec.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+			VK_CHECK( qvkCreateAccelerationStructureKHR( vk.device, &ec, NULL, &world_rt.tlasEmpty ) );
+		}
+		{
+			VkBuffer es; VkDeviceMemory esm;
+			VkBufferDeviceAddressInfo esa;
+			VkAccelerationStructureBuildRangeInfoKHR er;
+			const VkAccelerationStructureBuildRangeInfoKHR *epr = &er;
+			VkCommandBuffer ecmd;
+
+			vk_create_rt_storage( eSize.buildScratchSize,
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+				qtrue, &es, &esm );
+			esa.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+			esa.pNext = NULL;
+			esa.buffer = es;
+
+			buildInfo.dstAccelerationStructure = world_rt.tlasEmpty;
+			buildInfo.scratchData.deviceAddress = qvkGetBufferDeviceAddress( vk.device, &esa );
+
+			er.primitiveCount = 1;
+			er.primitiveOffset = 0; er.firstVertex = 0; er.transformOffset = 0;
+
+			ecmd = vk_begin_command_buffer();
+			qvkCmdBuildAccelerationStructuresKHR( ecmd, 1, &buildInfo, &epr );
+			vk_end_command_buffer( ecmd, __func__ );
+
+			qvkDestroyBuffer( vk.device, es, NULL );
+			qvkFreeMemory( vk.device, esm, NULL );
+		}
+		qvkDestroyBuffer( vk.device, einstBuffer, NULL );
+		qvkFreeMemory( vk.device, einstMemory, NULL );
+
+		{
+			VkWriteDescriptorSetAccelerationStructureKHR ai;
+			VkWriteDescriptorSet w;
+
+			ai.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+			ai.pNext = NULL;
+			ai.accelerationStructureCount = 1;
+			ai.pAccelerationStructures = &world_rt.tlasEmpty;
+
+			w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			w.pNext = &ai;
+			w.dstSet = vk.descriptor_as_empty;
+			w.dstBinding = 0;
+			w.dstArrayElement = 0;
+			w.descriptorCount = 1;
+			w.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+			w.pImageInfo = NULL;
+			w.pBufferInfo = NULL;
+			w.pTexelBufferView = NULL;
+
+			qvkUpdateDescriptorSets( vk.device, 1, &w, 0, NULL );
+		}
 	}
 
 	ri.Printf( PRINT_ALL, "...TLAS built (1 instance)\n" );
@@ -2295,6 +2389,14 @@ void vk_release_world_rt( void )
 	if (world_rt.tlasBuffer) {
 		qvkDestroyBuffer( vk.device, world_rt.tlasBuffer, NULL );
 		qvkFreeMemory( vk.device, world_rt.tlasMemory, NULL );
+	}
+
+	if ( world_rt.tlasEmpty ) {
+		qvkDestroyAccelerationStructureKHR ( vk.device, world_rt.tlasEmpty, NULL );
+	}
+	if ( world_rt.tlasEmptyBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.tlasEmptyBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.tlasEmptyMemory, NULL );
 	}
 
 	if ( world_rt.blas ) {
