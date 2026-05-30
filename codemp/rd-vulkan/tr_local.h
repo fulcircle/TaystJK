@@ -30,7 +30,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 	#define MAX_VBOS      4096
 
 	#define USE_VBO_GHOUL2
-	#define USE_VBO_MDV	
+	#define USE_VBO_MDV
 	#define USE_VBO_SS
 #endif
 
@@ -44,7 +44,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define MAX_REAL_DLIGHTS		( MAX_DLIGHTS*2 )
 #define MAX_LITSURFS			( MAX_DRAWSURFS )
 #define	MAX_FLARES				256
-	
+
 #define MAX_TEXTURE_SIZE		2048 // must be less or equal to 32768
 #define MAX_TEXTURE_UNITS		8
 
@@ -272,11 +272,11 @@ typedef struct image_s {
 	VkDescriptorSet			descriptor_set;
 	qboolean				isLightmap;
 	uint32_t				mipLevels;		// gl texture binding
-	VkSamplerAddressMode	wrapClampMode;	
+	VkSamplerAddressMode	wrapClampMode;
 } image_t;
 
 typedef struct VBO_s
-{	
+{
 	int				index;
 
 	VkBuffer		buffer;
@@ -303,7 +303,7 @@ typedef struct IBO_s
 	struct {
 		VkBuffer		buffer;
 		VkDeviceMemory	memory;
-	} staging;	
+	} staging;
 } IBO_t;
 
 //===============================================================================
@@ -559,7 +559,7 @@ typedef struct textureBundle_s {
 
 	bool			oneShotAnimMap;				// check this
 	bool			vertexLightmap;				// check this
-	
+
 	waveForm_t		rgbWave;
 	colorGen_t		rgbGen;
 
@@ -685,7 +685,7 @@ typedef struct shader_s {
 
 	qboolean	fogCollapse;
 	int			tessFlags;
-	
+
 	shaderStage_t	*stages[MAX_SHADER_STAGES];
 	deformStage_t	*deforms[MAX_SHADER_DEFORMS];
 
@@ -702,7 +702,7 @@ typedef struct shader_s {
 	float		clampTime;							// time this shader is clamped to
 	float		timeOffset;                         // current time offset for this shader
 
-	
+
 	qboolean	useDistortion;
 	qboolean	hasGlow;							// True if this shader has a stage with glow in it (just an optimization).
 
@@ -843,7 +843,7 @@ typedef struct viewParms_s {
 	orientationr_t	ori;					// Can't use "or" as it is a reserved word with gcc DREWS 2/2/2002
 	orientationr_t	world;
 	vec3_t			pvsOrigin;				// may be different than or.origin for portals
-	portalView_t	portalView;				// define view type for default, portal or mirror 
+	portalView_t	portalView;				// define view type for default, portal or mirror
 	int				frameSceneNum;			// copied from tr.frameSceneNum
 	int				frameCount;				// copied from tr.frameCount
 	cplane_t		portalPlane;			// clip anything behind this if mirroring
@@ -1165,6 +1165,13 @@ typedef struct
 	byte		latLong[2];
 } mgrid_t;
 
+typedef struct {
+		float color[3];
+		float origin[3];
+		float intensity;
+		uint32_t spawnflags;
+} rtStaticLight_t;
+
 typedef struct world_s {
 	char		name[MAX_QPATH];		// ie: maps/tim_dm2.bsp
 	char		baseName[MAX_QPATH];	// ie: tim_dm2
@@ -1202,6 +1209,9 @@ typedef struct world_s {
 	int			lightGridOffsets[8];
 
 	vec3_t		lightGridStep;
+
+	int			    numStaticLights;
+	rtStaticLight_t *rtStaticLights;
 
 	mgrid_t		*lightGridData;
 	word		*lightGridArray;
@@ -1503,7 +1513,7 @@ typedef struct {
 
 	textureCompressionRef_t textureCompression;
 	qboolean				textureFloat;
-	
+
 	qboolean swizzleNormalmap;
 
 	qboolean framebufferMultisample;
@@ -1633,7 +1643,7 @@ typedef struct trGlobals_s {
 	image_t					*dlightImage;		// inverse-quare highlight for projective adding
 	image_t					*flareImage;
 	image_t					*whiteImage;		// full of 0xff
-	image_t					*blackImage;			
+	image_t					*blackImage;
 	image_t					*identityLightImage;// full of tr.identityLightByte
 
 	shader_t				*defaultShader;
@@ -1910,7 +1920,7 @@ extern	cvar_t	*r_shadows;				// controls shadows: 0 = none, 1 = blur, 2 = stenci
 extern	cvar_t	*r_flares;				// light flares
 //extern	cvar_t	*r_flareSize;			// light flare size
 //extern cvar_t	*r_flareFade;
-//extern cvar_t	*r_flareCoeff;			// coefficient for the flare intensity falloff function. 
+//extern cvar_t	*r_flareCoeff;			// coefficient for the flare intensity falloff function.
 
 extern	cvar_t	*r_intensity;
 
@@ -2130,7 +2140,7 @@ struct shaderCommands_s
 	IBO_t			*ibo_model; // ghoul2/mdv item index
 	int				vboStage;
 	qboolean		allowVBO;
-	
+
 #endif
 
 	shader_t		*shader;
@@ -2575,7 +2585,7 @@ Ghoul2 Insert End
 
 void R_InitDecals( void );
 void RE_ClearDecals( void );
-void RE_AddDecalToScene( qhandle_t shader, const vec3_t origin, const vec3_t dir, float orientation, 
+void RE_AddDecalToScene( qhandle_t shader, const vec3_t origin, const vec3_t dir, float orientation,
 	float r, float g, float b, float a, qboolean alphaFade, float radius, qboolean temporary );
 void R_AddDecals( void );
 
