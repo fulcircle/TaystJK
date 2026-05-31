@@ -21,7 +21,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 ===========================================================================
 */
 
-// Sunny: known issues/notes that I havent really looked into yet 
+// Sunny: known issues/notes that I havent really looked into yet
 /*
 	known issues:
 -	broken capturebuffer on stopvideo avi recording
@@ -88,7 +88,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define USE_DEDICATED_ALLOCATION
 #endif
 // depth + msaa + msaa-resolve + screenmap.msaa + screenmap.resolve + screenmap.depth + (bloom_extract + blur pairs + dglow_extract + blur pairs) + dglow-msaa
-#define MAX_ATTACHMENTS_IN_POOL			( 6 + ( ( 1 + VK_NUM_BLUR_PASSES * 2 ) * 2 ) + 1  ) 
+#define MAX_ATTACHMENTS_IN_POOL			( 6 + ( ( 1 + VK_NUM_BLUR_PASSES * 2 ) * 2 ) + 1  )
 
 #define VK_DESC_STORAGE					0
 #define VK_DESC_UNIFORM					0
@@ -97,7 +97,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define VK_DESC_TEXTURE2				3
 #define VK_DESC_FOG_COLLAPSE			4
 #define VK_DESC_COUNT					5
-#define VK_DESC_AS						VK_DESC_COUNT
+#define VK_DESC_RT						VK_DESC_COUNT
 
 #define VK_DESC_TEXTURE_BASE			VK_DESC_TEXTURE0
 #define VK_DESC_FOG_ONLY				VK_DESC_TEXTURE1
@@ -477,7 +477,7 @@ typedef struct {
 	qboolean				vbo_ghoul2;
 	qboolean				vbo_mdv;
 #endif
-	Vk_Shader_Type			shader_type;	
+	Vk_Shader_Type			shader_type;
 	Vk_Shadow_Phase			shadow_phase;
 	Vk_Primitive_Topology	primitives;
 	uint32_t				surface_sprite_flags;
@@ -665,7 +665,7 @@ typedef struct vk_tess_s {
 #endif
 	VkFence				rendering_finished_fence;
 	qboolean			waitForFence;
-	
+
 	VkBuffer			vertex_buffer;
 	byte				*vertex_buffer_ptr; // pointer to mapped vertex buffer
 	VkDeviceSize		vertex_buffer_offset;
@@ -686,7 +686,7 @@ typedef struct vk_tess_s {
 		VkDescriptorSet	current[VK_DESC_COUNT];			// 0:uniform, 1:color0, 2:color1, 3:color2, 4:fog
 		uint32_t		offset[VK_DESC_UNIFORM_COUNT];	// 0:uniform, 1:data uniform, 2:bones uniform
 	} descriptor_set;
-	
+
 	uint32_t			num_indexes; // value from most recent vk_bind_index() call
 	VkPipeline			last_pipeline;
 	Vk_Depth_Range		depth_range;
@@ -747,7 +747,7 @@ typedef struct {
 	VkDescriptorSet	color_descriptor;
 	VkDescriptorSet bloom_image_descriptor[1 + VK_NUM_BLUR_PASSES * 2];
 	VkDescriptorSet dglow_image_descriptor[1 + VK_NUM_BLUR_PASSES * 2];
-	
+
 	VkImage			depth_image;
 	VkImageView		depth_image_view;
 
@@ -756,7 +756,7 @@ typedef struct {
 
 	VkImage			color_image;
 	VkImageView		color_image_view;
-	
+
 	VkImage			refraction_extract_image;
 	VkImageView		refraction_extract_image_view;
 	VkDescriptorSet	refraction_extract_descriptor;
@@ -818,7 +818,7 @@ typedef struct {
 		VkFramebuffer gamma[MAX_SWAPCHAIN_IMAGES];
 		VkFramebuffer screenmap;
 		VkFramebuffer capture;
-		
+
 		struct {
 			VkFramebuffer extract;
 		} refraction;
@@ -895,9 +895,9 @@ typedef struct {
 	VkDescriptorSetLayout	set_layout_uniform;		// dynamic uniform buffer
 	VkDescriptorSetLayout	set_layout_storage;		// feedback buffer
 
-	VkDescriptorSetLayout   set_layout_as;          // rt acceleration structure
-	VkDescriptorSet         descriptor_as;          // rt TLAS descriptor (world)
-	VkDescriptorSet         descriptor_as_empty;    // rt empty TLAS - bound for non-world draws
+	VkDescriptorSetLayout   set_layout_rt;          // rt acceleration structure
+	VkDescriptorSet         descriptor_rt;          // rt descriptor (world)
+	VkDescriptorSet         descriptor_rt_empty;    // rt empty - bound for non-world draws
 
 	// pipeline(s)
 	VkPipelineLayout pipeline_layout;				// default shaders
@@ -963,7 +963,7 @@ typedef struct {
 	uint32_t	pipelines_world_base;
 	int32_t		pipeline_create_count;
 
-	
+
 	// shader modules.
 	struct {
 		struct {
@@ -1062,7 +1062,7 @@ typedef struct {
 
 	uint32_t image_chunk_size;
 	uint32_t maxBoundDescriptorSets;
-	
+
 #ifdef USE_UPLOAD_QUEUE
 	VkFence aux_fence;
 	qboolean aux_fence_wait;
@@ -1168,8 +1168,8 @@ VkCommandBuffer vk_begin_command_buffer( void );
 void		vk_end_command_buffer( VkCommandBuffer command_buffer, const char *location );
 void		vk_create_command_pool( void );
 void		vk_create_command_buffer( void );
-void vk_record_image_layout_transition( VkCommandBuffer cmdBuf, VkImage image, 
-	VkImageAspectFlags image_aspect_flags, 
+void vk_record_image_layout_transition( VkCommandBuffer cmdBuf, VkImage image,
+	VkImageAspectFlags image_aspect_flags,
 	VkImageLayout old_layout, VkImageLayout new_layout, uint32_t src_stage_override, uint32_t dst_stage_override );
 
 // memory
@@ -1233,8 +1233,8 @@ void		vk_destroy_samplers( void );
 VkSampler	vk_find_sampler( const Vk_Sampler_Def *def );
 void		vk_delete_textures( void );
 #if 0
-void		vk_record_buffer_memory_barrier( VkCommandBuffer cb, VkBuffer buffer, 
-	VkDeviceSize size, VkDeviceSize offset, VkPipelineStageFlags src_stages, VkPipelineStageFlags dst_stages, 
+void		vk_record_buffer_memory_barrier( VkCommandBuffer cb, VkBuffer buffer,
+	VkDeviceSize size, VkDeviceSize offset, VkPipelineStageFlags src_stages, VkPipelineStageFlags dst_stages,
 	VkAccessFlags src_access, VkAccessFlags dst_access );
 #endif
 // post-processing

@@ -29,7 +29,7 @@ static VkBuffer shade_bufs[10];
 static int bind_base;
 static int bind_count;
 
-void vk_select_texture( const int index ) 
+void vk_select_texture( const int index )
 {
 	if (vk.ctmu == index)
 		return;
@@ -40,7 +40,7 @@ void vk_select_texture( const int index )
 	vk.ctmu = index;
 }
 
-void vk_set_depthrange( const Vk_Depth_Range depthRange ) 
+void vk_set_depthrange( const Vk_Depth_Range depthRange )
 {
 	tess.depthRange = depthRange;
 }
@@ -49,7 +49,7 @@ VkBuffer vk_get_vertex_buffer( void )
 {
 	return vk.cmd->vertex_buffer;
 }
- 
+
 static void get_mvp_transform( float *mvp )
 {
 	if (backEnd.projection2D)
@@ -87,7 +87,7 @@ void vk_update_mvp( const float *m ) {
 	else
 		get_mvp_transform(push_constants);
 
-	qvkCmdPushConstants(vk.cmd->command_buffer, vk.pipeline_layout, 
+	qvkCmdPushConstants(vk.cmd->command_buffer, vk.pipeline_layout,
 		VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), push_constants);
 
 #ifdef USE_VK_STATS
@@ -95,7 +95,7 @@ void vk_update_mvp( const float *m ) {
 #endif
 }
 
-void vk_set_2d( void ) 
+void vk_set_2d( void )
 {
 	backEnd.projection2D = qtrue;
 
@@ -185,14 +185,14 @@ void vk_bind_index( void )
 		uint32_t offset = 0;
 		vk.cmd->num_indexes = 0;
 
-		if ( tess.multiDrawPrimitives && tess.multiDrawPrimitives <= 1 ) 
+		if ( tess.multiDrawPrimitives && tess.multiDrawPrimitives <= 1 )
 		{
 			offset = (glIndex_t)(size_t)(tess.multiDrawFirstIndex[0]) * sizeof(uint32_t);
 			vk.cmd->num_indexes = tess.multiDrawNumIndexes[0];
 		}
 
 		vk_bind_index_buffer( tess.ibo_model->buffer, offset );
-		
+
 		return;
 	}
 #endif
@@ -219,7 +219,7 @@ static void vk_vbo_bind_geometry_mdv( int32_t flags )
 	VBO_t *vbo = tess.vbo_model;
 
 	shade_bufs[0] = shade_bufs[1] = shade_bufs[2] = shade_bufs[3] = shade_bufs[4] = shade_bufs[5] = shade_bufs[6] = shade_bufs[7] = shade_bufs[8] = shade_bufs[9] = vbo->buffer;
-	
+
 	Com_Memset( vk.cmd->vbo_offset, 0, sizeof(vk.cmd->vbo_offset) );
 
 	vk.cmd->vbo_offset[0] = vbo->offsets[0];	// xyz
@@ -282,14 +282,14 @@ static void vk_vbo_bind_geometry_surface_sprites ( uint32_t flags )
 
 
 	shade_bufs[0] = tr.ss.vbo->buffer;
-	
+
 	vk.cmd->vbo_offset[0] = 0;	// xyz
 	vk.cmd->vbo_offset[1] = vbo->offsets[0];	// xyz
 	vk.cmd->vbo_offset[2] = vbo->offsets[1];	// normal
 	vk.cmd->vbo_offset[3] = vbo->offsets[2];	// color
 	vk.cmd->vbo_offset[4] = vbo->offsets[3];	// width height
 	vk.cmd->vbo_offset[5] = vbo->offsets[4];	// skew
-	
+
 	bind_count = 6;
 	bind_base = 0;
 
@@ -426,7 +426,7 @@ void vk_bind_lighting( int stage, int bundle )
 	}
 }
 
-static void vk_write_uniform_descriptor( VkWriteDescriptorSet *desc, VkDescriptorBufferInfo *info, 
+static void vk_write_uniform_descriptor( VkWriteDescriptorSet *desc, VkDescriptorBufferInfo *info,
 	VkBuffer buffer, VkDescriptorSet descriptor, const uint32_t binding, const size_t size )
 {
 	info[binding].buffer = buffer;
@@ -475,13 +475,13 @@ void vk_create_storage_buffer( vk_storage_buffer_t *out, uint32_t size, const ch
 	desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	desc.queueFamilyIndexCount = 0;
 	desc.pQueueFamilyIndices = NULL;
-	
+
 	Com_Memset( &memory_requirements, 0, sizeof(memory_requirements) );
-	
+
 	desc.size = size;
 	desc.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 	VK_CHECK( qvkCreateBuffer( vk.device, &desc, NULL, &out->buffer ) );
-	
+
 	qvkGetBufferMemoryRequirements( vk.device, out->buffer, &memory_requirements );
 
 	memory_type_bits = memory_requirements.memoryTypeBits;
@@ -532,7 +532,7 @@ void vk_update_attachment_descriptors( void ) {
 		desc.pTexelBufferView = NULL;
 
 		qvkUpdateDescriptorSets( vk.device, 1, &desc, 0, NULL );
-		
+
 		// refraction
 		if ( vk.refractionActive )
 		{
@@ -632,7 +632,7 @@ void vk_init_descriptors( void ) {
 		alloc.descriptorSetCount = 1;
 		alloc.pSetLayouts = &vk.set_layout_sampler;
 		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.color_descriptor ) );
-		
+
 		// refraction
 		if ( vk.refractionActive )
 			VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.refraction_extract_descriptor ) );
@@ -660,12 +660,12 @@ void vk_init_descriptors( void ) {
 		alloc.pNext = NULL;
 		alloc.descriptorPool = vk.descriptor_pool;
 		alloc.descriptorSetCount = 1;
-		alloc.pSetLayouts = &vk.set_layout_as;
-		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_as ) );
-		VK_SET_OBJECT_NAME( vk.descriptor_as, "rt acceleration structure descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
+		alloc.pSetLayouts = &vk.set_layout_rt;
+		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_rt ) );
+		VK_SET_OBJECT_NAME( vk.descriptor_rt, "rt descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
 
-		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_as_empty ) );
-		VK_SET_OBJECT_NAME( vk.descriptor_as_empty, "rt empty acceleration structure descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
+		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_rt_empty ) );
+		VK_SET_OBJECT_NAME( vk.descriptor_rt_empty, "rt empty descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
 	}
 }
 
@@ -680,14 +680,14 @@ void vk_create_indirect_buffer( VkDeviceSize size )
 	int i;
 
 	vk_debug("Create indirect buffer: vk.cmd->indirect_buffer \n");
-	
+
 	desc.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	desc.pNext = NULL;
 	desc.flags = 0;
 	desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	desc.queueFamilyIndexCount = 0;
 	desc.pQueueFamilyIndices = NULL;
-	
+
 	Com_Memset(&vb_memory_requirements, 0, sizeof(vb_memory_requirements));
 
 	for (i = 0; i < NUM_COMMAND_BUFFERS; i++) {
@@ -741,14 +741,14 @@ void vk_create_vertex_buffer( VkDeviceSize size )
 	int i;
 
 	vk_debug("Create vertex buffer: vk.cmd->vertex_buffer \n");
-	
+
 	desc.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	desc.pNext = NULL;
 	desc.flags = 0;
 	desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	desc.queueFamilyIndexCount = 0;
 	desc.pQueueFamilyIndices = NULL;
-	
+
 	Com_Memset(&vb_memory_requirements, 0, sizeof(vb_memory_requirements));
 
 	for (i = 0; i < NUM_COMMAND_BUFFERS; i++) {
@@ -798,9 +798,9 @@ void vk_reset_descriptor( int index )
 void vk_update_descriptor( int tmu, VkDescriptorSet curDesSet )
 {
 	if (vk.cmd->descriptor_set.current[tmu] != curDesSet) {
-		vk.cmd->descriptor_set.start = 
+		vk.cmd->descriptor_set.start =
 			(tmu < vk.cmd->descriptor_set.start) ? tmu : vk.cmd->descriptor_set.start;
-		vk.cmd->descriptor_set.end = 
+		vk.cmd->descriptor_set.end =
 			(tmu > vk.cmd->descriptor_set.end) ? tmu : vk.cmd->descriptor_set.end;
 	}
 
@@ -812,7 +812,7 @@ void vk_update_descriptor_offset( int index, uint32_t offset )
 	vk.cmd->descriptor_set.offset[index] = offset;
 }
 
-void vk_bind_descriptor_sets( void ) 
+void vk_bind_descriptor_sets( void )
 {
 	uint32_t offsets[VK_DESC_UNIFORM_COUNT], offset_count;
 	uint32_t start, end, count, i;
@@ -848,9 +848,9 @@ void vk_bind_descriptor_sets( void )
 	if ( vk.rayQuery ) {
 		// world surfaces trace the real TLAS; non-world (models/2D) get the empty TLAS so rays always miss
 		VkDescriptorSet asSet = ( backEnd.currentEntity == &tr.worldEntity )
-			? vk.descriptor_as : vk.descriptor_as_empty;
+			? vk.descriptor_rt : vk.descriptor_rt_empty;
 		qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			vk.pipeline_layout, VK_DESC_AS, 1, &asSet, 0, NULL );
+			vk.pipeline_layout, VK_DESC_RT, 1, &asSet, 0, NULL );
 	}
 
 	vk.cmd->descriptor_set.end = 0;
@@ -915,12 +915,12 @@ void vk_draw_geometry( Vk_Depth_Range depth_range, qboolean indexed )
 	else
 #endif
 	{
-		if ( tess.multiDrawPrimitives && tess.multiDrawPrimitives > 1 ) 
+		if ( tess.multiDrawPrimitives && tess.multiDrawPrimitives > 1 )
 		{
 			uint32_t j, firstOffset, offset;
 			size_t *index;
 
-			for ( j = 0; j < tess.multiDrawPrimitives; j++ ) 
+			for ( j = 0; j < tess.multiDrawPrimitives; j++ )
 			{
 				VkDrawIndexedIndirectCommand indirectCmd = {};
 
@@ -938,8 +938,8 @@ void vk_draw_geometry( Vk_Depth_Range depth_range, qboolean indexed )
 					firstOffset = offset;
 			}
 
-			qvkCmdDrawIndexedIndirect( 
-				vk.cmd->command_buffer, 
+			qvkCmdDrawIndexedIndirect(
+				vk.cmd->command_buffer,
 				vk.cmd->indirect_buffer,
 				firstOffset,
 				tess.multiDrawPrimitives,
@@ -1000,7 +1000,7 @@ void ComputeColors( const int b, color4ub_t *dest, const shaderStage_t *pStage, 
 
 	// does not work for rotated models, technically, this should also be a CGEN type.
 	// But that would entail adding new shader commands....which is too much work for one thing
-	if (backEnd.currentEntity->e.renderfx & RF_VOLUMETRIC) 
+	if (backEnd.currentEntity->e.renderfx & RF_VOLUMETRIC)
 	{
 		int			i;
 		float* normal, dot;
@@ -1129,7 +1129,7 @@ void ComputeColors( const int b, color4ub_t *dest, const shaderStage_t *pStage, 
 	case CGEN_LIGHTMAPSTYLE:
 		for (i = 0; i < tess.numVertexes; i++)
 		{
-			*(int *)dest[i] = *(int *)styleColors[pStage->lightmapStyle[b%2]]; 
+			*(int *)dest[i] = *(int *)styleColors[pStage->lightmapStyle[b%2]];
 		}
 		break;
 	}
@@ -1193,7 +1193,7 @@ void ComputeColors( const int b, color4ub_t *dest, const shaderStage_t *pStage, 
 
 			VectorSubtract(tess.xyz[i], backEnd.viewParms.ori.origin, v);
 			len = VectorLength( v ) * tess.shader->portalRangeR;
-			
+
 			if ( len > 1 )
 			{
 				alpha = 0xff;
@@ -1254,7 +1254,7 @@ uint32_t vk_append_uniform( const void *uniform, size_t size, uint32_t min_offse
 	return offset;
 }
 
-static uint32_t vk_push_uniform( const vkUniform_t *uniform ) 
+static uint32_t vk_push_uniform( const vkUniform_t *uniform )
 {
 	const uint32_t offset = vk_append_uniform( uniform, sizeof(*uniform), vk.uniform_item_size );
 
@@ -1266,10 +1266,10 @@ static uint32_t vk_push_uniform( const vkUniform_t *uniform )
 }
 
 #ifdef USE_VBO_GHOUL2
-static uint32_t vk_push_uniform_global( const vkUniformGlobal_t *uniform ) 
-{	
+static uint32_t vk_push_uniform_global( const vkUniformGlobal_t *uniform )
+{
 	const uint32_t offset = vk_append_uniform( uniform, sizeof(*uniform), vk.uniform_global_item_size );
-	
+
 	vk_reset_descriptor( VK_DESC_UNIFORM );
 	vk_update_descriptor( VK_DESC_UNIFORM, vk.cmd->uniform_descriptor );
 	vk_update_descriptor_offset( VK_DESC_UNIFORM_GLOBAL_BINDING, offset );
@@ -1278,7 +1278,7 @@ static uint32_t vk_push_uniform_global( const vkUniformGlobal_t *uniform )
 }
 #endif
 
-uint32_t vk_push_indirect( int count, const void *data ) 
+uint32_t vk_push_indirect( int count, const void *data )
 {
 	const uint32_t offset = vk.cmd->indirect_buffer_offset;	// no alignment for indirect buffer?
 	const uint32_t size = count * sizeof(VkDrawIndexedIndirectCommand);
@@ -1396,7 +1396,7 @@ static void vk_set_fog_params( vkUniform_t *uniform, int *fogStage )
 			*fogStage = 1;
 			return;
 		}
-		
+
 		const fogProgramParms_t *fp = RB_CalcFogProgramParms();
 		// vertex data
 		VectorCopy4(fp->fogDistanceVector, uniform->fog.fogDistanceVector);
@@ -1441,15 +1441,15 @@ static void RB_FogPass( void ) {
 
 #ifdef USE_FOG_ONLY
 	int fog_stage;
-	
+
 	vk_bind_pipeline( pipeline );
 	vk_set_fog_params( &uniform, &fog_stage );
 
 	// when model vbos are disabled, but the shader still requires
 	// the modelmatrix (fog or refraction) to get world space positions.
 	// store the modelmatrix in main uniform
-	if ( !tess.vbo_model && vk.hw_fog 
-		&& backEnd.currentEntity && !( backEnd.currentEntity == &backEnd.entity2D || backEnd.currentEntity == &tr.worldEntity ) ) 
+	if ( !tess.vbo_model && vk.hw_fog
+		&& backEnd.currentEntity && !( backEnd.currentEntity == &backEnd.entity2D || backEnd.currentEntity == &tr.worldEntity ) )
 	{
 		uniform.fog.fogDistanceVector[3] = 1;	// is_entity
 
@@ -1695,7 +1695,7 @@ static void vk_compute_tex_mods( const textureBundle_t *bundle, float *outMatrix
 	for ( tm = 0; tm < bundle->numTexMods ; tm++ ) {
 		switch ( bundle->texMods[tm].type )
 		{
-			
+
 		case TMOD_NONE:
 			tm = TR_MAX_TEXMODS;		// break out of for loop
 			break;
@@ -1715,7 +1715,7 @@ static void vk_compute_tex_mods( const textureBundle_t *bundle, float *outMatrix
 		case TMOD_SCALE:
 			RB_CalcScaleTexMatrix( bundle->texMods[tm].translate, matrix );
 			break;
-		
+
 		case TMOD_STRETCH:
 			RB_CalcStretchTexMatrix( &bundle->texMods[tm].wave,  matrix );
 			break;
@@ -1734,7 +1734,7 @@ static void vk_compute_tex_mods( const textureBundle_t *bundle, float *outMatrix
 		}
 
 		switch ( bundle->texMods[tm].type )
-		{	
+		{
 		case TMOD_NONE:
 		case TMOD_TURBULENT:
 		default:
@@ -1772,7 +1772,7 @@ static void vk_set_attr_color( color4ub_t *dest, const qboolean skip ){
 	uint32_t i;
 	int numVerts;
 
-	numVerts = ( tess.vbo_model && tess.surfType == SF_MDX ) ? 
+	numVerts = ( tess.vbo_model && tess.surfType == SF_MDX ) ?
 		tess.mesh_ptr->numVertexes : tess.numVertexes;
 
 	if ( skip ) {
@@ -1790,10 +1790,10 @@ static void vk_set_attr_color( color4ub_t *dest, const qboolean skip ){
 #endif
 
 static void vk_compute_tex_coords( const textureBundle_t *bundle, vktcMod_t *tcMod, vktcGen_t *tcGen ) {
-	vk_compute_tex_mods( bundle, tcMod->matrix, tcMod->offTurb ); 
+	vk_compute_tex_mods( bundle, tcMod->matrix, tcMod->offTurb );
 
 	tcGen->type = bundle->tcGen;
-	
+
 	if ( bundle->tcGen == TCGEN_VECTOR )
 	{
 		VectorCopy( bundle->tcGenVectors[0], tcGen->vector0 );
@@ -1801,8 +1801,8 @@ static void vk_compute_tex_coords( const textureBundle_t *bundle, vktcMod_t *tcM
 	}
 }
 
-static void vk_compute_colors( const int b, const shaderStage_t *pStage, int forceRGBGen ){	
-	if ( backEnd.currentEntity->e.renderfx & RF_VOLUMETRIC ) 
+static void vk_compute_colors( const int b, const shaderStage_t *pStage, int forceRGBGen ){
+	if ( backEnd.currentEntity->e.renderfx & RF_VOLUMETRIC )
 		return;
 
 	float *baseColor, *vertColor;
@@ -1813,14 +1813,14 @@ static void vk_compute_colors( const int b, const shaderStage_t *pStage, int for
 	baseColor = (float*)uniform_global.bundle[b].baseColor;
 	vertColor = (float*)uniform_global.bundle[b].vertColor;
 
-	baseColor[0] = baseColor[1] = baseColor[2] = baseColor[3] = 1.0f;  	
+	baseColor[0] = baseColor[1] = baseColor[2] = baseColor[3] = 1.0f;
    	vertColor[0] = vertColor[1] = vertColor[2] = vertColor[3] = 0.0f;
 
 	if ( !forceRGBGen )
 		rgbGen = pStage->bundle[b].rgbGen;
 
 	switch ( rgbGen) {
-		case CGEN_IDENTITY_LIGHTING: 
+		case CGEN_IDENTITY_LIGHTING:
 			baseColor[0] = baseColor[1] = baseColor[2] = tr.identityLight;
 			break;
 		case CGEN_EXACT_VERTEX:
@@ -1915,7 +1915,7 @@ static void vk_compute_colors( const int b, const shaderStage_t *pStage, int for
 		case AGEN_VERTEX:
 			if ( rgbGen != CGEN_VERTEX ) {
 				baseColor[3] = 0.0f;
-				vertColor[3] = 1.0f;			
+				vertColor[3] = 1.0f;
 			}
 			break;
 		case AGEN_ONE_MINUS_VERTEX:
@@ -1934,12 +1934,12 @@ static void vk_compute_colors( const int b, const shaderStage_t *pStage, int for
 	}
 
 	if ( backEnd.currentEntity && backEnd.currentEntity->e.renderfx & RF_FORCE_ENT_ALPHA ) {
-		baseColor[3] = backEnd.currentEntity->e.shaderRGBA[3] / 255.0f; 
+		baseColor[3] = backEnd.currentEntity->e.shaderRGBA[3] / 255.0f;
 		vertColor[3] = 0.0f;
 	}
 
 	// multiply color by overbrightbits if this isn't a blend
-	if ( tr.overbrightBits 
+	if ( tr.overbrightBits
 	 && !( ( pStage->stateBits & GLS_SRCBLEND_BITS ) == GLS_SRCBLEND_DST_COLOR )
 	 && !( ( pStage->stateBits & GLS_SRCBLEND_BITS ) == GLS_SRCBLEND_ONE_MINUS_DST_COLOR )
 	 && !( ( pStage->stateBits & GLS_DSTBLEND_BITS ) == GLS_DSTBLEND_SRC_COLOR )
@@ -2057,7 +2057,7 @@ static void vk_compute_deform( void ) {
 	if ( type != DEFORM_NONE ) {
 		info->time = tess.shaderTime;
 		info->type = type;
-		info->func = waveFunc;	
+		info->func = waveFunc;
 	}
 }
 
@@ -2136,7 +2136,7 @@ void vk_lighting_pass( void )
 	{
 		ComputeTexCoords(tess.shader->lightingBundle, &pStage->bundle[tess.shader->lightingBundle]);
 	}
-	
+
 	vk_bind_pipeline(pipeline);
 	vk_bind_index();
 	vk_bind_lighting(tess.shader->lightingStage, tess.shader->lightingBundle);
@@ -2171,7 +2171,7 @@ void vk_merge_surface_sprite_commands(vk_ss_group_t *group)
 
     int write = 0;
 
-    for ( int read = 1; read < group->num_commands; read++ ) 
+    for ( int read = 1; read < group->num_commands; read++ )
 	{
         vk_ss_group_cmd_t *a = &group->cmd[write];
         vk_ss_group_cmd_t *b = &group->cmd[read];
@@ -2181,15 +2181,15 @@ void vk_merge_surface_sprite_commands(vk_ss_group_t *group)
 
         int b_start = b->firstInstance;
         int b_end   = b->firstInstance + b->numInstances;
-		
+
 		// merge b into a when adjacent
-        if ( b_start <= a_end ) 
-		{ 
+        if ( b_start <= a_end )
+		{
 			a->firstInstance = MIN( b_start, a_start );
 			a->numInstances = MAX( b_end, a_end ) - a->firstInstance;
         }
-		else 
-		{ 
+		else
+		{
             if ( ++write != read )
                 group->cmd[write] = *b;
         }
@@ -2221,7 +2221,7 @@ void RB_SurfaceSpritesVBO( srfSprites_t *surf )
 			continue;
 
 		tess.shader = group->def.shader;
-		shaderStage_t *firstStage = tess.shader->stages[0];	
+		shaderStage_t *firstStage = tess.shader->stages[0];
 		static int fog_stage;
 
 		tess.surfType = SF_SPRITES;
@@ -2248,11 +2248,11 @@ void RB_SurfaceSpritesVBO( srfSprites_t *surf )
 
 			if ( entity_num == REFENTITYNUM_WORLD )
 				get_mvp_transform( push_constants );
-			else 
+			else
 			{
 				orientationr_t ori;
 				trRefEntity_t *ent = &tr.refdef.entities[entity_num];
-	
+
 				R_RotateForEntity( ent, &backEnd.viewParms, &ori );
 
 				const float* p = backEnd.viewParms.projectionMatrix;
@@ -2264,7 +2264,7 @@ void RB_SurfaceSpritesVBO( srfSprites_t *surf )
 			}
 		}
 
-		qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout_surface_sprite, 
+		qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout_surface_sprite,
 			VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), push_constants );
 
 		vk_bind_pipeline( pipeline );
@@ -2287,7 +2287,7 @@ void RB_SurfaceSpritesVBO( srfSprites_t *surf )
 			vk.cmd->uniform_descriptor,
 			vk.surface_sprites_ssbo[SS_UNPACK_SSBO_INDEX( group->def.ssbo_bits )].descriptor,
 			vk.cmd->descriptor_set.current[VK_DESC_TEXTURE0],
-			fog_stage ? tr.fogImage->descriptor_set: VK_NULL_HANDLE 
+			fog_stage ? tr.fogImage->descriptor_set: VK_NULL_HANDLE
 		};
 
 		uint32_t set_count = fog_stage ? 4: 3;
@@ -2295,10 +2295,10 @@ void RB_SurfaceSpritesVBO( srfSprites_t *surf )
 		qvkCmdBindDescriptorSets(vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 		vk.pipeline_layout_surface_sprite, 0, set_count, sets, ARRAY_LEN(offsets), offsets);
 
-		// ~sunny, this worth cpu cycles? 
+		// ~sunny, this worth cpu cycles?
 		// eg. t2_dpred issues alot of tiny ss drawsurfs
-		if ( group->num_commands > 10 && r_surfaceSprites->integer == 2 ) 
-			vk_merge_surface_sprite_commands( group ); 
+		if ( group->num_commands > 10 && r_surfaceSprites->integer == 2 )
+			vk_merge_surface_sprite_commands( group );
 
 		for ( j = 0; j < group->num_commands; j++ )
 		{
@@ -2365,7 +2365,7 @@ void RB_StageIteratorGeneric( void )
 	if (tess.vbo_world_index != 0) {
 		VBO_PrepareQueues();
 		tess.vboStage = 0;
-	} 
+	}
 	else
 #endif
 	{
@@ -2395,12 +2395,12 @@ void RB_StageIteratorGeneric( void )
 	vk_bind_index();
 
 #ifdef USE_VBO
-	if ( tess.vbo_model ) 
+	if ( tess.vbo_model )
 	{
 		is_ghoul2_vbo = (qboolean)( tess.surfType == SF_MDX );
 		is_mdv_vbo = (qboolean)( tess.surfType == SF_VBO_MDVMESH );
 
-		vk_compute_deform();	
+		vk_compute_deform();
 	}
 #endif
 
@@ -2472,10 +2472,10 @@ void RB_StageIteratorGeneric( void )
 			if ( pStage->bundle[i].image[0] != NULL)  {
 				vk_select_texture(i);
 
-				if ( backEnd.isGlowPass ) 
+				if ( backEnd.isGlowPass )
 				{
 					// use blackimage for non glow bundles during a glowPass
-					if ( !pStage->bundle[i].glow ) 
+					if ( !pStage->bundle[i].glow )
 					{
 						vk_bind( tr.blackImage );
 						Com_Memset( tess.svars.colors[i], 0xff, tess.numVertexes * 4 );
@@ -2512,7 +2512,7 @@ void RB_StageIteratorGeneric( void )
 					ComputeColors( i, tess.svars.colors[i], pStage, forceRGBGen );
 			}
 		}
-	
+
 		// reject this stage if it's not a glow stage but we are doing a glow pass.
 		if ( backEnd.isGlowPass && !pStage->glow )
 			continue;
@@ -2554,16 +2554,16 @@ void RB_StageIteratorGeneric( void )
 			// only force blend on the internal distortion shader
 			if ( tess.shader == tr.distortionShader )
 				def.state_bits = GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA | GLS_DEPTHMASK_TRUE;
-	
+
 			if ( backEnd.currentEntity->e.renderfx & RF_FORCE_ENT_ALPHA ) {
 				ForceAlpha( (unsigned char *) tess.svars.colors, backEnd.currentEntity->e.shaderRGBA[3] );
-				
-				def.state_bits = GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA;	
-				
+
+				def.state_bits = GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA;
+
 				// depth write, so faces through the model will be stomped over by nearer ones. this works because
 				// we draw RF_FORCE_ENT_ALPHA stuff after everything else, including standard alpha surfs.
 #ifdef RF_ALPHA_DEPTH
-				if ( backEnd.currentEntity->e.renderfx & RF_ALPHA_DEPTH ) 
+				if ( backEnd.currentEntity->e.renderfx & RF_ALPHA_DEPTH )
 					def.state_bits |= GLS_DEPTHMASK_TRUE;
 #endif
 
@@ -2574,15 +2574,15 @@ void RB_StageIteratorGeneric( void )
 			if ( forceRGBGen && !(tess_flags & TESS_RGBA0) )
 			{
 				tess_flags |= TESS_RGBA0;
-				def.shader_type = !pStage->mtEnv ? TYPE_SINGLE_TEXTURE : 
+				def.shader_type = !pStage->mtEnv ? TYPE_SINGLE_TEXTURE :
 					( (def.shader_type >= TYPE_MULTI_TEXTURE_MUL2_IDENTITY) ? TYPE_MULTI_TEXTURE_MUL2 : TYPE_MULTI_TEXTURE_ADD2);
 			}
 
-			if ( is_refraction ) 
+			if ( is_refraction )
 			{
 				def.shader_type = TYPE_REFRACTION;
 				def.face_culling = CT_TWO_SIDED;
-				
+
 				tess_flags |= TESS_NNN;
 			}
 
@@ -2591,30 +2591,30 @@ void RB_StageIteratorGeneric( void )
 
 			pipeline = vk_find_pipeline_ext( 0, &def, qfalse );
 		}
-	
-		
+
+
 
 		qboolean set_model_matrix = qfalse;
 
-		if ( is_refraction ) 
+		if ( is_refraction )
 		{
 			// bind extracted color image copy / blit
 			vk_update_descriptor( VK_DESC_TEXTURE0, vk.refraction_extract_descriptor );
 
 			Com_Memset( &uniform.refraction, 0, sizeof(uniform.refraction) );
-			
+
 			if ( !tess.vbo_model ) // else is set earlier
 			{
 				vk_compute_tex_coords( &pStage->bundle[0], &uniform.refraction.tcMod, &uniform.refraction.tcGen );
-				
+
 				set_model_matrix = qtrue;
 			}
 
 			push_uniform = qtrue;
 		}
 
-		if ( !tess.vbo_model && vk.hw_fog && fogCollapse 
-			&& backEnd.currentEntity && !( backEnd.currentEntity == &backEnd.entity2D || backEnd.currentEntity == &tr.worldEntity ) ) 
+		if ( !tess.vbo_model && vk.hw_fog && fogCollapse
+			&& backEnd.currentEntity && !( backEnd.currentEntity == &backEnd.entity2D || backEnd.currentEntity == &tr.worldEntity ) )
 		{
 			set_model_matrix = qtrue;
 			uniform.fog.fogDistanceVector[3] = 1;	// is_entity
@@ -2623,7 +2623,7 @@ void RB_StageIteratorGeneric( void )
 		// when model vbos are disabled, but the shader still requires
 		// the modelmatrix (fog or refraction) to get world space positions.
 		// store the modelmatrix in main uniform
-		if ( set_model_matrix ) 
+		if ( set_model_matrix )
 		{
 			trRefEntity_t *refEntity = backEnd.currentEntity;
 			orientationr_t ori;
@@ -2638,7 +2638,7 @@ void RB_StageIteratorGeneric( void )
 		}
 
 		vk_update_descriptor_offset( VK_DESC_UNIFORM_CAMERA_BINDING, vk.cmd->camera_ubo_offset );
-		
+
 		if ( vk.hw_fog )
 			vk_update_descriptor_offset( VK_DESC_UNIFORM_FOGS_BINDING, vk.cmd->fogs_ubo_offset );
 
@@ -2647,19 +2647,19 @@ void RB_StageIteratorGeneric( void )
 			vk_push_uniform_global( &uniform_global );
 		}
 
-		if ( backEnd.currentEntity ) 
+		if ( backEnd.currentEntity )
 		{
-			if ( backEnd.currentEntity == &backEnd.entity2D ) 
+			if ( backEnd.currentEntity == &backEnd.entity2D )
 			{
 				vk.cmd->descriptor_set.offset[VK_DESC_UNIFORM_ENTITY_BINDING] = vk.cmd->entity_ubo_offset[REFENTITYNUM_WORLD];
 				vk.cmd->descriptor_set.offset[VK_DESC_UNIFORM_BONES_BINDING] = 0;
 			}
-			else if ( backEnd.currentEntity == &tr.worldEntity ) 
+			else if ( backEnd.currentEntity == &tr.worldEntity )
 			{
 				vk.cmd->descriptor_set.offset[VK_DESC_UNIFORM_ENTITY_BINDING] = vk.cmd->entity_ubo_offset[REFENTITYNUM_WORLD];
 				vk.cmd->descriptor_set.offset[VK_DESC_UNIFORM_BONES_BINDING] = 0;
 			}
-			else 
+			else
 			{
 				const int refEntityNum = backEnd.currentEntity - backEnd.refdef.entities;
 

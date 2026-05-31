@@ -24,7 +24,6 @@ typedef struct {
 	VkBuffer				   tlasBuffer;
 	VkDeviceMemory             tlasMemory;
 
-
 	// empty TLAS (a mask=0 instance) bound for non-world draws so rays always miss
 	VkAccelerationStructureKHR tlasEmpty;
 	VkBuffer				   tlasEmptyBuffer;
@@ -343,7 +342,7 @@ static void vk_rt_build_world_tlas ( void )
 
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		write.pNext = &asInfo;
-		write.dstSet = vk.descriptor_as;
+		write.dstSet = vk.descriptor_rt;
 		write.dstBinding = 0;
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
@@ -433,7 +432,7 @@ static void vk_rt_build_world_tlas ( void )
 
 			w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			w.pNext = &ai;
-			w.dstSet = vk.descriptor_as_empty;
+			w.dstSet = vk.descriptor_rt_empty;
 			w.dstBinding = 0;
 			w.dstArrayElement = 0;
 			w.descriptorCount = 1;

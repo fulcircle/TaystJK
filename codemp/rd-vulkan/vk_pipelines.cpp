@@ -46,7 +46,7 @@ static qboolean is_mdv_vbo;
 #endif
 
 static void vk_push_layout_binding( VkDescriptorSetLayoutBinding *bind, VkDescriptorType type,
-    uint32_t binding,VkShaderStageFlags flags ) 
+    uint32_t binding,VkShaderStageFlags flags )
 {
     bind[binding].binding = binding;
     bind[binding].descriptorType = type;
@@ -55,13 +55,13 @@ static void vk_push_layout_binding( VkDescriptorSetLayoutBinding *bind, VkDescri
     bind[binding].pImmutableSamplers = NULL;
 }
 
-static void vk_create_layout_binding( int binding, VkDescriptorType type, 
-    VkShaderStageFlags flags, VkDescriptorSetLayout *layout, qboolean is_uniform ) 
+static void vk_create_layout_binding( int binding, VkDescriptorType type,
+    VkShaderStageFlags flags, VkDescriptorSetLayout *layout, qboolean is_uniform )
 {
     uint32_t count = 1;
     VkDescriptorSetLayoutBinding bind[VK_DESC_UNIFORM_COUNT];
     VkDescriptorSetLayoutCreateInfo desc;
-    
+
     vk_push_layout_binding( bind, type, binding, flags );
 
     if ( is_uniform ) {
@@ -87,7 +87,7 @@ void vk_create_descriptor_layout( void )
 {
     vk_debug("Create: vk.descriptor_pool, vk.set_layout, vk.pipeline_layout\n");
 
-    // Like command buffers, descriptor sets are allocated from a pool. 
+    // Like command buffers, descriptor sets are allocated from a pool.
     // So we must first create the Descriptor pool.
     {
         VkDescriptorPoolSize pool_size[4];
@@ -134,7 +134,7 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_as, qfalse);
+	       	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt, qfalse);
         }
     }
 }
@@ -145,7 +145,7 @@ void vk_create_pipeline_layout( void )
     VkDescriptorSetLayout set_layouts[6];
     VkPipelineLayoutCreateInfo desc;
     VkPushConstantRange push_range;
-    
+
     push_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     push_range.offset = 0;
     push_range.size = 64; // 16 mvp floats + 16
@@ -166,7 +166,7 @@ void vk_create_pipeline_layout( void )
     desc.pPushConstantRanges = &push_range;
 
     if ( vk.rayQuery && vk.maxBoundDescriptorSets > VK_DESC_COUNT ) {
-    	set_layouts[VK_DESC_AS] = vk.set_layout_as;
+    	set_layouts[VK_DESC_RT] = vk.set_layout_rt;
      	desc.setLayoutCount = VK_DESC_COUNT + 1;
     }
 
@@ -176,10 +176,10 @@ void vk_create_pipeline_layout( void )
 #ifdef USE_VBO_SS
     // surface sprites ssbo
     desc.setLayoutCount = (vk.maxBoundDescriptorSets >= VK_DESC_COUNT) ? VK_DESC_COUNT : 4;
-    set_layouts[1] = vk.set_layout_storage; 
+    set_layouts[1] = vk.set_layout_storage;
 
     if ( vk.rayQuery && vk.maxBoundDescriptorSets > VK_DESC_COUNT ) {
-	   	set_layouts[VK_DESC_AS] = vk.set_layout_as;
+	   	set_layouts[VK_DESC_RT] = vk.set_layout_rt;
 		desc.setLayoutCount = VK_DESC_COUNT + 1;
     }
 
@@ -223,7 +223,7 @@ void vk_create_pipeline_layout( void )
     VK_SET_OBJECT_NAME(vk.pipeline_layout_blend, "pipeline layout - blend", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT);
 }
 
-static uint32_t vk_bind_stride( uint32_t in ) 
+static uint32_t vk_bind_stride( uint32_t in )
 {
 #ifdef USE_VBO
     if ( is_ghoul2_vbo )
@@ -272,7 +272,7 @@ static void vk_push_attr( uint32_t location, uint32_t binding, VkFormat format )
 }
 
 // Applications specify vertex input attribute and vertex input binding
-// descriptions as part of graphics pipeline creation	
+// descriptions as part of graphics pipeline creation
 // A vertex binding describes at which rate to load data
 // from memory throughout the vertices
 static void vk_push_vertex_input_binding_attribute( const Vk_Pipeline_Def *def ) {
@@ -287,7 +287,7 @@ static void vk_push_vertex_input_binding_attribute( const Vk_Pipeline_Def *def )
         // quad mesh
         vk_push_bind( 0, sizeof( uint32_t ) );					    // xyz array
         vk_push_attr( 0, 0, VK_FORMAT_R32_UINT );
-        
+
         // instance
         const size_t stride = sizeof( sprite_t );
         vk_push_bind_instance( 1, stride );                         // xyz array
@@ -338,7 +338,7 @@ static void vk_push_vertex_input_binding_attribute( const Vk_Pipeline_Def *def )
             vk_push_attr( 2, 2, VK_FORMAT_R32G32_SFLOAT );
             break;
 
-        case TYPE_SINGLE_TEXTURE: 
+        case TYPE_SINGLE_TEXTURE:
             vk_push_bind( 0, sizeof( vec4_t ) );					// xyz array
             vk_push_bind( 1, sizeof( color4ub_t ) );				// color array
             vk_push_bind( 2, sizeof( vec2_t ) );					// st0 array
@@ -555,7 +555,7 @@ static void vk_push_vertex_input_binding_attribute( const Vk_Pipeline_Def *def )
 
 #if defined(USE_VBO)
     if ( def->vbo_ghoul2 || def->vbo_mdv ) {
-        if ( ( def->shader_type == TYPE_FOG_ONLY || def->shader_type == TYPE_REFRACTION ) || 
+        if ( ( def->shader_type == TYPE_FOG_ONLY || def->shader_type == TYPE_REFRACTION ) ||
              ( def->shader_type >= TYPE_GENERIC_BEGIN && def->shader_type <= TYPE_GENERIC_END ) )
         {
             // bind attributes for fog and generic gpu shading shaders
@@ -596,7 +596,7 @@ static void vk_push_vertex_input_binding_attribute( const Vk_Pipeline_Def *def )
                     break;
             }
 
-            if ( def->vbo_ghoul2 ) 
+            if ( def->vbo_ghoul2 )
             {
                 vk_push_bind( 8, sizeof( vec4_t ) );		// bone indexes
                 vk_push_attr( 8, 8, VK_FORMAT_R8G8B8A8_UINT );
@@ -609,8 +609,8 @@ static void vk_push_vertex_input_binding_attribute( const Vk_Pipeline_Def *def )
 #endif
 }
 
-static void vk_set_pipeline_color_blend_attachment_factor( const Vk_Pipeline_Def *def, 
-    VkPipelineColorBlendAttachmentState *attachment_blend_state ) 
+static void vk_set_pipeline_color_blend_attachment_factor( const Vk_Pipeline_Def *def,
+    VkPipelineColorBlendAttachmentState *attachment_blend_state )
 {
     // source
     switch (def->state_bits & GLS_SRCBLEND_BITS)
@@ -715,7 +715,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         int32_t kFaceFlattened;
         int32_t kFxSprite;
         int32_t kAdditive;
-        int32_t kUseFog; 
+        int32_t kUseFog;
     } SurfaceSpritesData;
 #endif
 
@@ -729,13 +729,13 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
     VkSpecializationInfo vert_spec_info;
 
     struct FragSpecData {
-        int32_t alpha_test_func; 
+        int32_t alpha_test_func;
         float   alpha_test_value;
         float   depth_fragment;
         int32_t alpha_to_coverage;
         int32_t color_mode;
         int32_t hw_fog;
-        int32_t abs_light; 
+        int32_t abs_light;
         int32_t tex_mode;
         int32_t discard_mode;
         float   identity_color;
@@ -744,7 +744,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
 #ifdef USE_VBO_SS
         SurfaceSpritesData ss;
 #endif
-    } frag_spec_data; 
+    } frag_spec_data;
     VkSpecializationMapEntry frag_spec_entries[18];
     VkSpecializationInfo frag_spec_info;
 
@@ -915,7 +915,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
 
         case TYPE_FOG_ONLY:
             // ghoul2 requires strides & bones, mdv only strides
-            vs_module = &vk.shaders.vert.fog[vbo][vk.hw_fog]; 
+            vs_module = &vk.shaders.vert.fog[vbo][vk.hw_fog];
             fs_module = &vk.shaders.frag.fog[vk.hw_fog];
             break;
 
@@ -930,7 +930,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
     }
 
 #ifdef USE_VBO_SS
-    if ( def->surface_sprite_flags ) 
+    if ( def->surface_sprite_flags )
     {
         vs_module = &vk.shaders.surface_sprite_vs[0];
         fs_module = &vk.shaders.surface_sprite_fs[0];
@@ -962,7 +962,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
     set_shader_stage_desc( shader_stages + 1, VK_SHADER_STAGE_FRAGMENT_BIT, *fs_module, "main" );
 
     //Com_Memset( vert_spec_data, 0, sizeof(vert_spec_data) ); // clipping
-    Com_Memset( &frag_spec_data, 0, sizeof(FragSpecData) );   
+    Com_Memset( &frag_spec_data, 0, sizeof(FragSpecData) );
 
     // fragment shader specialization data
     atest_bits = state_bits & GLS_ATEST_BITS;
@@ -1092,7 +1092,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         default:
             break;
     }
-        
+
     //frag_spec_data.identity_color = tr.identityLight;
     frag_spec_data.identity_color = ((float)def->color.rgb) / 255.0;
 	frag_spec_data.identity_alpha = ((float)def->color.alpha) / 255.0;
@@ -1114,7 +1114,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
     vert_spec_info.pMapEntries = vert_spec_entries;
     vert_spec_info.dataSize = sizeof( vert_spec_data );
     vert_spec_info.pData = &vert_spec_data;
-    shader_stages[0].pSpecializationInfo = &vert_spec_info;     
+    shader_stages[0].pSpecializationInfo = &vert_spec_info;
 
     //
     // fragment module specialization data
@@ -1174,7 +1174,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
     }
 #endif
 
-    shader_stages[1].pSpecializationInfo = &frag_spec_info;     
+    shader_stages[1].pSpecializationInfo = &frag_spec_info;
 
     // vertex input state (binding and attributes)
     vk_push_vertex_input_binding_attribute( def );
@@ -1264,7 +1264,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         rasterization_state.depthBiasConstantFactor = 0.0f; // dynamic depth bias state
         rasterization_state.depthBiasSlopeFactor = 0.0f; // dynamic depth bias state
     }
-    
+
     // multisample state
     multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample_state.pNext = NULL;
@@ -1543,7 +1543,7 @@ static void vk_create_post_process_pipeline( int program_index, uint32_t width, 
     frag_spec_data.bloom_modulate = r_bloom_modulate->integer;
     frag_spec_data.dither = r_dither->integer;
 
-    if ( program_index == 4 ) 
+    if ( program_index == 4 )
     {
         // adjust for legacy bias: r_DynamicGlowIntensity default ~1.13, subtract 1.0 to align with old bloom intensity defaults
         frag_spec_data.bloom_intensity = MAX( 0.01f, MIN( (r_DynamicGlowIntensity->value - 1.0f), 4.0f ) );
@@ -1720,7 +1720,7 @@ static void vk_create_blur_pipeline( char *name, int program_index, uint32_t ind
         float   texoffset_x;
         float   texoffset_y;
         float   correction;
-    } frag_spec_data; 
+    } frag_spec_data;
     VkSpecializationMapEntry frag_spec_entries[3];
     VkSpecializationInfo frag_spec_info;
     VkRenderPass renderpass;
@@ -1775,7 +1775,7 @@ static void vk_create_blur_pipeline( char *name, int program_index, uint32_t ind
     shader_stages[1].pNext = NULL;
     shader_stages[1].flags = 0;
 
-    frag_spec_data.texoffset_x = 1.2 / (float)width; 
+    frag_spec_data.texoffset_x = 1.2 / (float)width;
     frag_spec_data.texoffset_y = 1.2 / (float)height;
 
     if ( horizontal_pass ) {
@@ -2065,12 +2065,12 @@ void vk_alloc_persistent_pipelines( void )
                     def.shader_type = TYPE_SINGLE_TEXTURE;
 #endif
                     def.state_bits = fog_state;
-#ifdef USE_VBO  
+#ifdef USE_VBO
                     def.vbo_ghoul2 = qfalse;
                     def.vbo_mdv = qfalse;
 #endif
                     vk.std_pipeline.fog_pipelines[0][i][j][k] = vk_find_pipeline_ext(0, &def, qtrue);
-#ifdef USE_VBO                   
+#ifdef USE_VBO
                     if ( vk.vboGhoul2Active ) {
                         def.vbo_ghoul2 = qtrue;
                         vk.std_pipeline.fog_pipelines[1][i][j][k] = vk_find_pipeline_ext(0, &def, qtrue);
@@ -2265,7 +2265,7 @@ static void vk_create_bloom_pipelines( void )
         height /= 2;
         vk_create_blur_pipeline( "bloom", 1, i + 0, width, height, qtrue); // horizontal
         vk_create_blur_pipeline( "bloom", 1, i + 1, width, height, qfalse); // vertical
-    } 
+    }
 
     vk_create_post_process_pipeline( 2, glConfig.vidWidth, glConfig.vidHeight ); // post process blending
 }
