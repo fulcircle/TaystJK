@@ -38,6 +38,28 @@ typedef struct {
 
 static world_rt_t world_rt;
 
+static void vk_rt_write_light_descriptor( VkDescriptorSet set ) {
+	VkDescriptorBufferInfo bufInfo;
+	VkWriteDescriptorSet   write;
+
+	bufInfo.buffer = world_rt.lightBuffer;
+	bufInfo.offset = 0;
+	bufInfo.range  = VK_WHOLE_SIZE;
+
+	write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.pNext            = NULL;
+	write.dstSet           = set;
+	write.dstBinding       = 1;
+	write.dstArrayElement  = 0;
+	write.descriptorCount  = 1;
+	write.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.pImageInfo       = NULL;
+	write.pBufferInfo      = &bufInfo;
+	write.pTexelBufferView = NULL;
+
+	qvkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
+}
+
 static void vk_rt_create_storage( VkDeviceSize size, VkBufferUsageFlags usage,
 								  qboolean deviceAddress, VkBuffer *outBuffer, VkDeviceMemory *outMemory )
 {
@@ -502,6 +524,9 @@ static void vk_rt_build_world_lights(rtStaticLight_t *staticLights, uint32_t num
 	world_rt.numLights = numLights;
 
 	ri.Printf( PRINT_ALL, "..RT lights uploaded: %u\n", numLights);
+
+	vk_rt_write_light_descriptor( vk.descriptor_rt );
+	vk_rt_write_light_descriptor(vk.descriptor_rt_empty);
 }
 
 void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {

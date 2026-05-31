@@ -895,7 +895,7 @@ typedef struct {
 	VkDescriptorSetLayout	set_layout_uniform;		// dynamic uniform buffer
 	VkDescriptorSetLayout	set_layout_storage;		// feedback buffer
 
-	VkDescriptorSetLayout   set_layout_rt;          // rt acceleration structure
+	VkDescriptorSetLayout   set_layout_rt;          // rt layout
 	VkDescriptorSet         descriptor_rt;          // rt descriptor (world)
 	VkDescriptorSet         descriptor_rt_empty;    // rt empty - bound for non-world draws
 

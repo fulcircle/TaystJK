@@ -24,6 +24,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_local.h"
 #include "vk_local.h"
 #include "vulkan/vulkan_core.h"
+#include <cstdint>
 
 #define ALLOC_SPEC_ENTRY( arr, index, struct_type, struct_data, member ) \
     arr[index].constantID = (index); \
@@ -53,6 +54,25 @@ static void vk_push_layout_binding( VkDescriptorSetLayoutBinding *bind, VkDescri
     bind[binding].descriptorCount = 1;
     bind[binding].stageFlags = flags;
     bind[binding].pImmutableSamplers = NULL;
+}
+
+static void vk_create_layout_bindings( uint32_t numBindings, VkDescriptorType *types,
+	VkShaderStageFlags flags, VkDescriptorSetLayout *layout ) {
+
+		VkDescriptorSetLayoutBinding bind[VK_DESC_UNIFORM_COUNT];
+	    VkDescriptorSetLayoutCreateInfo desc;
+
+		for (uint32_t i = 0; i < numBindings; i++) {
+		    vk_push_layout_binding( bind, types[i], i, flags );
+		}
+
+		desc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	    desc.pNext = NULL;
+	    desc.flags = 0;
+	    desc.bindingCount = numBindings;
+	    desc.pBindings = bind;
+	    VK_CHECK(qvkCreateDescriptorSetLayout(vk.device, &desc, NULL, layout));
+
 }
 
 static void vk_create_layout_binding( int binding, VkDescriptorType type,
@@ -90,7 +110,7 @@ void vk_create_descriptor_layout( void )
     // Like command buffers, descriptor sets are allocated from a pool.
     // So we must first create the Descriptor pool.
     {
-        VkDescriptorPoolSize pool_size[4];
+        VkDescriptorPoolSize pool_size[5];
         VkDescriptorPoolCreateInfo desc;
         uint32_t i, maxSets;
         uint32_t poolCount = 3;
@@ -110,7 +130,9 @@ void vk_create_descriptor_layout( void )
 		if (vk.rayQuery ) {
 			pool_size[3].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			pool_size[3].descriptorCount = 2;	// world TLAS + empty TLAS
-			poolCount = 4;
+			pool_size[4].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+			pool_size[4].descriptorCount = 2;
+			poolCount = 5;
 		}
 
         for (i = 0, maxSets = 0; i < poolCount; i++) {
@@ -134,7 +156,10 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt, qfalse);
+	       	VkDescriptorType types[2];
+			types[0] = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+			types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	       	vk_create_layout_bindings( 2, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
         }
     }
 }
