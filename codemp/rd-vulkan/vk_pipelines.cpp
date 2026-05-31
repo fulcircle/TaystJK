@@ -741,7 +741,6 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         float   identity_color;
         float   identity_alpha;
         int32_t acff;
-        int32_t rt_shadow;
 #ifdef USE_VBO_SS
         SurfaceSpritesData ss;
 #endif
@@ -1106,10 +1105,6 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
 
 	frag_spec_data.hw_fog = vert_spec_data.hw_fog = vk.hw_fog;
 
-    frag_spec_data.rt_shadow = ( vk.rayQuery && vbo == 0
-    	&& (state_bits & GLS_BLEND_BITS) == 0
-    	&& !(state_bits & GLS_DEPTHTEST_DISABLE) ) ? 1 : 0;
-
 	//
 	// vertex module specialization data
 	//
@@ -1174,9 +1169,8 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         vert_spec_info.mapEntryCount -= num_ss_data;
         vert_spec_info.dataSize -= sizeof( SurfaceSpritesData );
 
-        frag_spec_info.dataSize -= sizeof( SurfaceSpritesData );  // = base + rt_shadow (rt_shadow precedes ss)
-        INIT_SPEC_ENTRY_FRAG( 12, rt_shadow )                     // slot 12 = rt_shadow
-        frag_spec_info.mapEntryCount = 13;                        // base 0-11 + rt_shadow
+        frag_spec_info.dataSize -= sizeof( SurfaceSpritesData );  // base only
+        frag_spec_info.mapEntryCount = 12;                        // base 0-11
     }
 #endif
 
