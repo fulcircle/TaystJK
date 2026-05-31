@@ -20,7 +20,7 @@
 		vec4 lightPos;
 		vec4 lightColor;
 		vec4 lightVector;
-	//#ifdef USE_FOG	
+	//#ifdef USE_FOG
 		// fog parameters:
 		vec4 fogDistanceVector;
 		vec4 fogDepthVector;
@@ -107,7 +107,7 @@
 		vkDisintegration_t	u_disintegration;
 		vkDeform_t			u_deform;
 		float				u_portalRange;
-	};	
+	};
 
 	layout(location = 7) in vec4 var_Normal;
 	layout(location = 8) in vec4 var_LightDir;
@@ -126,6 +126,13 @@
 	}
 #endif
 
+struct RtLight {
+	vec3 color;
+	float intensity;
+	vec3 origin;
+	uint spawnflags;
+};
+
 layout(set = 1, binding = 0) uniform sampler2D texture0;
 #ifdef USE_TX1
 layout(set = 2, binding = 0) uniform sampler2D texture1;
@@ -137,6 +144,30 @@ layout(set = 3, binding = 0) uniform sampler2D texture2;
 layout(set = 4, binding = 0) uniform sampler2D fog_texture;
 #endif
 layout(set = 5, binding = 0) uniform accelerationStructureEXT u_tlas;
+
+layout(std430, set = 5, binding = 1) readonly buffer RtLights {
+	RtLight lights[];
+};
+
+// Trace a shadow ray from worldPos toward lightPos against the world TLAS.
+// Returns 1.0 if the light is visible (unoccluded), 0.0 if something blocks it.
+float traceShadow( vec3 worldPos, vec3 lightPos ) {
+	vec3  toLight = lightPos - worldPos;
+	float dist    = length( toLight );
+	vec3  dir     = toLight / dist;
+
+	rayQueryEXT rq;
+	// TerminateOnFirstHit: we only care whether ANYTHING blocks, not the closest hit.
+	// tMin 1.0 / tMax dist-1.0: bias off the surface and stop just short of the light.
+	rayQueryInitializeEXT( rq, u_tlas,
+		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
+		0xFFu, worldPos, 1.0, dir, dist - 1.0 );
+
+	while ( rayQueryProceedEXT( rq ) ) {}
+
+	return ( rayQueryGetIntersectionTypeEXT( rq, true ) ==
+		gl_RayQueryCommittedIntersectionNoneEXT ) ? 1.0 : 0.0;
+}
 
 #ifdef USE_CLX_IDENT
 // fixed identity (1.0) color for all textures
@@ -217,16 +248,16 @@ float CorrectAlpha(float threshold, float alpha, vec2 tc)
 	void ApplyACFF(inout vec4 base, in vec4 fogColor, in float fogAlpha)
 	{
 		if ( acff == 1 )		// ACFF_RGB
-			base.rgb *= ( 1.0 - fogAlpha );        
+			base.rgb *= ( 1.0 - fogAlpha );
 
 		else if ( acff == 2 )		// ACFF_RGBA
-			base *= ( 1.0 - fogAlpha );            
+			base *= ( 1.0 - fogAlpha );
 
 		else if ( acff == 3 )		// ACFF_ALPHA
-			base.a *= ( 1.0 - fogAlpha );         
+			base.a *= ( 1.0 - fogAlpha );
 
 		else			// default: ACFF_NONE
-			base = mix( base, fogColor, fogAlpha ); 
+			base = mix( base, fogColor, fogAlpha );
 	}
 
 	vec4 CalcFog(in vec3 viewOrigin, in vec3 position, in vkUniformFogEntry_t fog)
@@ -452,7 +483,7 @@ void main() {
 #endif
 		base = vec4(color0.rgb + color1.rgb + color2.rgb, color0.a * color1.a * color2.a);
 	}
-	else 
+	else
 	{
 		// default case, modulate
 		vec4 color1 = texture(texture1, frag_tex_coord1);
@@ -654,7 +685,7 @@ void main() {
 		int u_fogIndex = int(fogDistanceVector[1]);
 		vec4 fog_color = CalcFog( u_ViewOrigin.rgb, fog_tex_coord, u_fogs.fogs[u_fogIndex] );
 		ApplyACFF( base, fog_color, fog_color.a );
-	} 
+	}
 	else {
 		vec4 fog = texture( fog_texture, fog_tex_coord.xy );
 		vec4 fog_color = fog * fogColor;
@@ -679,6 +710,21 @@ void main() {
 	gl_FragDepth = gl_FragCoord.z;
 #else
 
-	out_color = base;
+	vec3 worldNormal = normalize( cross( dFdy(var_WorldPos), dFdx(var_WorldPos) ) );
+	vec3 radiance = vec3 ( 0.0 );
+
+	for (int i = 0; i < lights.length(); i++) {
+		vec3 toLight = lights[i].origin - var_WorldPos;
+		float dist = length ( toLight );
+		vec3 L = toLight / dist;
+		float NdotL = max ( dot (worldNormal, L), 0.0 );
+		float falloff = 100.0 / ( dist * dist );
+		float vis = traceShadow( var_WorldPos, lights[i].origin );
+
+		radiance += lights[i].color * lights[i].intensity * falloff * NdotL * vis;
+	}
+
+	out_color = vec4( base.rgb * radiance, base.a );
+
 #endif
 }
