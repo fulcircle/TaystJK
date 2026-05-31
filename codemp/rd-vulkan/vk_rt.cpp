@@ -30,11 +30,16 @@ typedef struct {
 	VkBuffer				   tlasEmptyBuffer;
 	VkDeviceMemory             tlasEmptyMemory;
 
+	// Lighting
+	VkBuffer 				   lightBuffer;
+	VkDeviceMemory             lightMemory;
+	uint32_t				   numLights;
+
 } world_rt_t;
 
 static world_rt_t world_rt;
 
-static void vk_create_rt_storage( VkDeviceSize size, VkBufferUsageFlags usage,
+static void vk_rt_create_storage( VkDeviceSize size, VkBufferUsageFlags usage,
 								  qboolean deviceAddress, VkBuffer *outBuffer, VkDeviceMemory *outMemory )
 {
 	VkBufferCreateInfo desc;
@@ -66,7 +71,7 @@ static void vk_create_rt_storage( VkDeviceSize size, VkBufferUsageFlags usage,
 	qvkBindBufferMemory( vk.device, *outBuffer, *outMemory, 0 );
 }
 
-static void vk_upload_rt_buffer( VkDeviceSize size, const void *src,
+static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsageFlags usage,
 	VkBuffer *outBuffer, VkDeviceMemory *outMemory)
 {
 	VkBufferCreateInfo        desc;
@@ -85,9 +90,7 @@ static void vk_upload_rt_buffer( VkDeviceSize size, const void *src,
 	desc.queueFamilyIndexCount = 0; desc.pQueueFamilyIndices = NULL;
 	desc.size = size;
 
-	desc.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT
-		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+	desc.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage;
 
 	VK_CHECK ( qvkCreateBuffer( vk.device, &desc, NULL, outBuffer ) );
 
@@ -127,7 +130,7 @@ static void vk_upload_rt_buffer( VkDeviceSize size, const void *src,
 	qvkFreeMemory( vk.device, stagingMem, NULL );
 }
 
-static void vk_build_world_blas ( void ) {
+static void vk_rt_build_world_blas ( void ) {
 	VkBufferDeviceAddressInfo                   addrInfo;
 	VkDeviceAddress                             posAddr, idxAddr;
 	VkAccelerationStructureGeometryKHR          geom;
@@ -177,7 +180,7 @@ static void vk_build_world_blas ( void ) {
 		(unsigned)sizeInfo.buildScratchSize,
 		primCount );
 
-	vk_create_rt_storage( sizeInfo.accelerationStructureSize,
+	vk_rt_create_storage( sizeInfo.accelerationStructureSize,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			qtrue, &world_rt.asBuffer, &world_rt.asMemory);
 	{
@@ -199,7 +202,7 @@ static void vk_build_world_blas ( void ) {
 		VkAccelerationStructureDeviceAddressInfoKHR blasAddrInfo;
 		VkCommandBuffer cmd;
 
-		vk_create_rt_storage( sizeInfo.buildScratchSize,
+		vk_rt_create_storage( sizeInfo.buildScratchSize,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			qtrue, &scratchBuffer, &scratchMemory );
 
@@ -232,7 +235,7 @@ static void vk_build_world_blas ( void ) {
 	ri.Printf( PRINT_ALL, "...BLAS built: address=0x%llx\n", (unsigned long long)world_rt.blasAddress );
 }
 
-static void vk_build_world_tlas ( void )
+static void vk_rt_build_world_tlas ( void )
 {
 	VkAccelerationStructureInstanceKHR          instance;
 	VkBuffer                                    instBuffer;
@@ -257,7 +260,9 @@ static void vk_build_world_tlas ( void )
 	instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 	instance.accelerationStructureReference = world_rt.blasAddress;
 
-	vk_upload_rt_buffer( sizeof(instance), &instance, &instBuffer, &instMemory );
+	vk_rt_upload_buffer( sizeof(instance), &instance,
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		&instBuffer, &instMemory );
 	addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 	addrInfo.pNext = NULL;
 	addrInfo.buffer = instBuffer;
@@ -283,7 +288,7 @@ static void vk_build_world_tlas ( void )
 	qvkGetAccelerationStructureBuildSizesKHR( vk.device,
 		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &instCount, &sizeInfo );
 
-	vk_create_rt_storage( sizeInfo.accelerationStructureSize,
+	vk_rt_create_storage( sizeInfo.accelerationStructureSize,
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
 		qfalse, &world_rt.tlasBuffer, &world_rt.tlasMemory );
 	{
@@ -303,7 +308,7 @@ static void vk_build_world_tlas ( void )
 		const VkAccelerationStructureBuildRangeInfoKHR *pRange = &range;
 		VkCommandBuffer cmd;
 
-		vk_create_rt_storage( sizeInfo.buildScratchSize,
+		vk_rt_create_storage( sizeInfo.buildScratchSize,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			qtrue, &scratchBuffer, &scratchMemory);
 		sAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -362,7 +367,9 @@ static void vk_build_world_tlas ( void )
 		uint32_t                                 eCount = 1;
 
 		einst.mask = 0;
-		vk_upload_rt_buffer( sizeof(einst), &einst, &einstBuffer, &einstMemory );
+		vk_rt_upload_buffer( sizeof(einst), &einst,
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			&einstBuffer, &einstMemory );
 		eAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		eAddr.pNext = NULL;
 		eAddr.buffer = einstBuffer;
@@ -373,7 +380,7 @@ static void vk_build_world_tlas ( void )
 		qvkGetAccelerationStructureBuildSizesKHR( vk.device,
 			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &eCount, &eSize );
 
-		vk_create_rt_storage( eSize.accelerationStructureSize,
+		vk_rt_create_storage( eSize.accelerationStructureSize,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
 			qfalse, &world_rt.tlasEmptyBuffer, &world_rt.tlasEmptyMemory );
 		{
@@ -392,7 +399,7 @@ static void vk_build_world_tlas ( void )
 			const VkAccelerationStructureBuildRangeInfoKHR *epr = &er;
 			VkCommandBuffer ecmd;
 
-			vk_create_rt_storage( eSize.buildScratchSize,
+			vk_rt_create_storage( eSize.buildScratchSize,
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 				qtrue, &es, &esm );
 			esa.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -443,7 +450,7 @@ static void vk_build_world_tlas ( void )
 }
 
 
-void vk_release_world_rt( void )
+void vk_rt_release_world( void )
 {
 
 	if ( world_rt.tlas ) {
@@ -479,14 +486,30 @@ void vk_release_world_rt( void )
 		qvkFreeMemory( vk.device, world_rt.indexMemory, NULL );
 	}
 
+	if ( world_rt.lightBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.lightBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.lightMemory, NULL );
+	}
+
 	Com_Memset( &world_rt, 0, sizeof(world_rt) );
 }
 
-void vk_build_world_lights(void) {
+static void vk_rt_build_world_lights(rtStaticLight_t *staticLights, uint32_t numLights) {
+	if (!vk.rayQuery) return;
+	if (numLights == 0) return;
 
+	VkDeviceSize size = numLights * sizeof(rtStaticLight_t);
+	vk_rt_upload_buffer(size, staticLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightBuffer, &world_rt.lightMemory);
+	world_rt.numLights = numLights;
+
+	ri.Printf( PRINT_ALL, "..RT lights uploaded: %u\n", numLights);
 }
 
-void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
+void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
+	vk_rt_build_world_lights( staticLights, numLights );
+}
+
+void R_RT_BuildWorldGeometryBuffers(msurface_t *surf, int surfCount) {
 	msurface_t *sf;
 	int i, k, type;
 	int numVertexes = 0, numIndexes = 0;
@@ -499,7 +522,7 @@ void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
 		return;
 	}
 
-	vk_release_world_rt();
+	vk_rt_release_world();
 
 	for (i = 0, sf = surf; i < surfCount; i++, sf++) {
 		switch( *sf->data ) {
@@ -567,8 +590,12 @@ void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
 			baseVertex, baseIndex / 3,
 			mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2] );
 
-	vk_upload_rt_buffer((VkDeviceSize)baseVertex * sizeof(vec3_t), positions, &world_rt.positionBuffer, &world_rt.positionMemory);
-	vk_upload_rt_buffer( (VkDeviceSize)baseIndex * sizeof(uint32_t), indices, &world_rt.indexBuffer, &world_rt.indexMemory );
+	vk_rt_upload_buffer((VkDeviceSize)baseVertex * sizeof(vec3_t), positions,
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		&world_rt.positionBuffer, &world_rt.positionMemory);
+	vk_rt_upload_buffer( (VkDeviceSize)baseIndex * sizeof(uint32_t), indices,
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		&world_rt.indexBuffer, &world_rt.indexMemory );
 	world_rt.numVertices = baseVertex;
 	world_rt.numIndices = baseIndex;
 
@@ -579,6 +606,6 @@ void R_BuildWorldRTGeometry(msurface_t *surf, int surfCount) {
 	ri.Hunk_FreeTempMemory( indices );
 	ri.Hunk_FreeTempMemory( positions );
 
-	vk_build_world_blas();
-	vk_build_world_tlas();
+	vk_rt_build_world_blas();
+	vk_rt_build_world_tlas();
 }

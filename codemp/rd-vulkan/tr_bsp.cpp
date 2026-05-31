@@ -2480,7 +2480,7 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index )
 #ifdef USE_VBO
 	R_BuildWorldVBO(s_worldData.surfaces, s_worldData.numsurfaces);
 #endif
-	R_BuildWorldRTGeometry(s_worldData.surfaces, s_worldData.numsurfaces);
+	R_RT_BuildWorldGeometryBuffers(s_worldData.surfaces, s_worldData.numsurfaces);
 
 	worldData.dataSize = (byte *)Hunk_Alloc(0, h_low) - startMarker;
 
@@ -2488,6 +2488,7 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index )
 	{
 		R_LoadEntities( &header->lumps[LUMP_ENTITIES], worldData );
 		R_LoadLights(worldData);
+		R_RT_BuildWorldLightBuffers(worldData.rtStaticLights, worldData.numStaticLights);
 		R_LoadLightGrid( &header->lumps[LUMP_LIGHTGRID], worldData );
 		R_LoadLightGridArray( &header->lumps[LUMP_LIGHTARRAY], worldData );
 

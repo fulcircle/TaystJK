@@ -653,7 +653,7 @@ void vk_shutdown( void )
 #endif
 
 	if ( vk.rayQuery )
-		vk_release_world_rt();
+		vk_rt_release_world();
 
 	vk_clean_staging_buffer();
 

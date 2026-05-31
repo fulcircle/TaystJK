@@ -1106,7 +1106,7 @@ void R_Init( void ) {
 #endif
 
 	if ( vk.rayQuery )
-		vk_release_world_rt();
+		vk_rt_release_world();
 
 	R_Set2DRatio();
 	R_InitImages();	

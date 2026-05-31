@@ -1154,7 +1154,7 @@ void		VBO_RenderIBOItems( void );
 void		VBO_ClearQueue( void );
 
 // rt
-void        vk_release_world_rt( void );
+void        vk_rt_release_world( void );
 
 int			get_mdv_stride( void );
 int			get_mdxm_stride( void );
