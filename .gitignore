@@ -195,3 +195,9 @@ compile_commands.json
 #############
 [Bb]uild*/
 cmake-build-*
+
+#############
+## RT shader build artifacts (rebuilt by compile_threaded.bat each run)
+#############
+codemp/rd-vulkan/shaders/tools/compile_threaded.exe
+codemp/rd-vulkan/shaders/spirv/data.spv
