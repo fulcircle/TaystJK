@@ -10,7 +10,7 @@ typedef struct {
 	uint32_t 					lightDebugMode;
 	float 						falloffScale;
 	int32_t						debugLightIndex;
-	int32_t						_pad0;			// std140: pad block to 16 bytes
+	uint32_t					numLights;
 } rtParams_t;
 
 typedef struct {
@@ -543,12 +543,24 @@ void vk_rt_release_world( void )
 }
 
 void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
+	rtStaticLight_t  dummyLight = {};
+	rtStaticLight_t *lights;
 	if (!vk.rayQuery) return;
-	if (numLights == 0) return;
+	if (numLights == 0) {
+		// Bind one zeroed dummy light so binding 1 is always a valid descriptor.
+		// The shader loops on u_numLights (0 here), so the dummy is never read.
+		world_rt.numLights = 0;
+		numLights = 1;
+		lights = &dummyLight;
+	} else {
+		world_rt.numLights = numLights;
+		lights = staticLights;
+	}
+
+	if (world_rt.rtParams) world_rt.rtParams->numLights = world_rt.numLights;
 
 	VkDeviceSize size = numLights * sizeof(rtStaticLight_t);
-	vk_rt_upload_buffer(size, staticLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightBuffer, &world_rt.lightMemory);
-	world_rt.numLights = numLights;
+	vk_rt_upload_buffer(size, lights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightBuffer, &world_rt.lightMemory);
 
 	ri.Printf( PRINT_ALL, "..RT lights uploaded: %u\n", numLights);
 

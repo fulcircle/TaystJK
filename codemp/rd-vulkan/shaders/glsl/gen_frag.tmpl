@@ -153,6 +153,7 @@ layout(set = 5, binding = 2) uniform RtParams {
     uint  u_LightDebugMode;
     float u_falloffScale;
     int   u_debugLightIndex;   // -1 = aggregate all lights; >=0 = isolate that light
+    uint  u_numLights;         // valid light count (binding 1 may hold a dummy element)
 };
 
 // Trace a shadow ray from worldPos toward lightPos against the world TLAS.
@@ -733,7 +734,7 @@ void main() {
         float dbgSelVis     = 0.0;
         float dbgSelFalloff = 0.0;
 
-		for (int i = 0; i < lights.length(); i++) {
+		for (int i = 0; i < int(u_numLights); i++) {
 			vec3 toLight = lights[i].origin - var_WorldPos;
 			float dist = length ( toLight );
 			vec3 L = toLight / dist;
