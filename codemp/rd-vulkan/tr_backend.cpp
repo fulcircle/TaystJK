@@ -1049,6 +1049,8 @@ const void	*RB_DrawSurfs( const void *data ) {
 
 	RB_UpdateUniformConstants( &backEnd.refdef, &backEnd.viewParms );
 
+	R_RT_UpdateParams();
+
 	// clear the z buffer, set the modelview, etc
 	RB_BeginDrawingView();
 

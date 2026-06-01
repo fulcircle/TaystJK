@@ -9,6 +9,8 @@
 typedef struct {
 	uint32_t 					lightDebugMode;
 	float 						falloffScale;
+	int32_t						debugLightIndex;
+	int32_t						_pad0;			// std140: pad block to 16 bytes
 } rtParams_t;
 
 typedef struct {
@@ -540,7 +542,7 @@ void vk_rt_release_world( void )
 	Com_Memset( &world_rt, 0, sizeof(world_rt) );
 }
 
-static void vk_rt_build_world_lights(rtStaticLight_t *staticLights, uint32_t numLights) {
+void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
 	if (!vk.rayQuery) return;
 	if (numLights == 0) return;
 
@@ -553,13 +555,6 @@ static void vk_rt_build_world_lights(rtStaticLight_t *staticLights, uint32_t num
 	vk_rt_write_light_descriptor( vk.descriptor_rt );
 	vk_rt_write_light_descriptor(vk.descriptor_rt_empty);
 
-	vk_rt_create_params_buffer();
-	vk_rt_write_params_descriptor(vk.descriptor_rt );
-	vk_rt_write_params_descriptor(vk.descriptor_rt_empty );
-}
-
-void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
-	vk_rt_build_world_lights( staticLights, numLights );
 }
 
 void R_RT_BuildWorldGeometryBuffers(msurface_t *surf, int surfCount) {
@@ -661,4 +656,19 @@ void R_RT_BuildWorldGeometryBuffers(msurface_t *surf, int surfCount) {
 
 	vk_rt_build_world_blas();
 	vk_rt_build_world_tlas();
+	
+	vk_rt_create_params_buffer();
+	vk_rt_write_params_descriptor(vk.descriptor_rt );
+	vk_rt_write_params_descriptor(vk.descriptor_rt_empty );
+}
+
+void R_RT_UpdateParams( void ) {
+	if (!vk.rayQuery || world_rt.rtParams == NULL) {
+		return;
+	}
+
+	world_rt.rtParams->lightDebugMode = r_rtDebugLighting->integer;
+	world_rt.rtParams->falloffScale = 100.0f;
+	world_rt.rtParams->debugLightIndex = r_rtDebugLightIndex->integer;
+	
 }
