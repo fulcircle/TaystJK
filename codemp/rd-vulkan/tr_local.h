@@ -727,6 +727,8 @@ typedef struct shader_s {
 	int			curIndexes;
 #endif
 
+	float       surfaceLight;
+
 	struct shader_s		*remappedShader;			// current shader this one is remapped too
 	struct	shader_s	*next;
 } shader_t;
@@ -1953,6 +1955,7 @@ extern cvar_t	*r_patchStitching;
 // Vulkan
 extern cvar_t	*r_defaultImage;
 extern cvar_t	*r_device;
+extern cvar_t	*r_rtDebugLighting;
 extern cvar_t	*r_ext_multisample;
 extern cvar_t	*r_ext_supersample;
 extern cvar_t	*r_ext_alpha_to_coverage;

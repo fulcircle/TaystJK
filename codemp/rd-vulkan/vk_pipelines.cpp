@@ -111,7 +111,7 @@ void vk_create_descriptor_layout( void )
     // Like command buffers, descriptor sets are allocated from a pool.
     // So we must first create the Descriptor pool.
     {
-        VkDescriptorPoolSize pool_size[5];
+        VkDescriptorPoolSize pool_size[6];
         VkDescriptorPoolCreateInfo desc;
         uint32_t i, maxSets;
         uint32_t poolCount = 3;
@@ -133,7 +133,10 @@ void vk_create_descriptor_layout( void )
 			pool_size[3].descriptorCount = 2;	// world TLAS + empty TLAS
 			pool_size[4].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			pool_size[4].descriptorCount = 2;
-			poolCount = 5;
+
+			pool_size[5].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			pool_size[5].descriptorCount = 2;
+			poolCount = 6;
 		}
 
         for (i = 0, maxSets = 0; i < poolCount; i++) {
@@ -157,10 +160,11 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	VkDescriptorType types[2];
+	       	VkDescriptorType types[3];
 			types[0] = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	       	vk_create_layout_bindings( 2, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
+			types[2] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	       	vk_create_layout_bindings( 3, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
         }
     }
 }

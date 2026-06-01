@@ -5,6 +5,12 @@
 #include <cstddef>
 #include <cstdint>
 
+
+typedef struct {
+	uint32_t 					lightDebugMode;
+	float 						falloffScale;
+} rtParams_t;
+
 typedef struct {
 	VkBuffer	   positionBuffer;
 	VkDeviceMemory positionMemory;
@@ -34,9 +40,36 @@ typedef struct {
 	VkDeviceMemory             lightMemory;
 	uint32_t				   numLights;
 
+	// Lighting Params
+	VkBuffer				   paramsBuffer;
+	VkDeviceMemory			   paramsMemory;
+	rtParams_t				   *rtParams;
+
 } world_rt_t;
 
 static world_rt_t world_rt;
+
+static void vk_rt_write_params_descriptor( VkDescriptorSet set) {
+	VkDescriptorBufferInfo bufInfo;
+	VkWriteDescriptorSet   write;
+
+	bufInfo.buffer = world_rt.paramsBuffer;
+	bufInfo.offset = 0;
+	bufInfo.range  = VK_WHOLE_SIZE;
+
+	write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.pNext            = NULL;
+	write.dstSet           = set;
+	write.dstBinding       = 2;
+	write.dstArrayElement  = 0;
+	write.descriptorCount  = 1;
+	write.descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.pImageInfo       = NULL;
+	write.pBufferInfo      = &bufInfo;
+	write.pTexelBufferView = NULL;
+
+	qvkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
+}
 
 static void vk_rt_write_light_descriptor( VkDescriptorSet set ) {
 	VkDescriptorBufferInfo bufInfo;
@@ -60,8 +93,12 @@ static void vk_rt_write_light_descriptor( VkDescriptorSet set ) {
 	qvkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
 }
 
-static void vk_rt_create_storage( VkDeviceSize size, VkBufferUsageFlags usage,
-								  qboolean deviceAddress, VkBuffer *outBuffer, VkDeviceMemory *outMemory )
+// Create a buffer + back it with memory of the requested properties.
+// memProps selects device-local vs host-visible; deviceAddress adds the
+// device-address allocation flag (needed for acceleration-structure buffers).
+static void vk_rt_create_buffer( VkDeviceSize size, VkBufferUsageFlags usage,
+	VkMemoryPropertyFlags memProps, qboolean deviceAddress,
+	VkBuffer *outBuffer, VkDeviceMemory *outMemory )
 {
 	VkBufferCreateInfo desc;
 	VkMemoryAllocateInfo alloc_info;
@@ -80,7 +117,7 @@ static void vk_rt_create_storage( VkDeviceSize size, VkBufferUsageFlags usage,
 	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	alloc_info.pNext = NULL;
 	alloc_info.allocationSize = mem_reqs.size;
-	alloc_info.memoryTypeIndex = vk_find_memory_type(mem_reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	alloc_info.memoryTypeIndex = vk_find_memory_type(mem_reqs.memoryTypeBits, memProps);
 	if ( deviceAddress ) {
 		flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
 		flagsInfo.pNext = NULL;
@@ -95,49 +132,20 @@ static void vk_rt_create_storage( VkDeviceSize size, VkBufferUsageFlags usage,
 static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsageFlags usage,
 	VkBuffer *outBuffer, VkDeviceMemory *outMemory)
 {
-	VkBufferCreateInfo        desc;
-	VkMemoryAllocateInfo      alloc_info;
-	VkMemoryAllocateFlagsInfo flagsInfo;
-	VkMemoryRequirements      mem_reqs;
 	VkBuffer                  staging;
 	VkDeviceMemory            stagingMem;
 	VkCommandBuffer           cmd;
 	VkBufferCopy              region;
 	void                      *data;
 
-	desc.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	desc.pNext = NULL; desc.flags = 0;
-	desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	desc.queueFamilyIndexCount = 0; desc.pQueueFamilyIndices = NULL;
-	desc.size = size;
+	// device-local destination (device address flag preserves prior behaviour)
+	vk_rt_create_buffer( size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, outBuffer, outMemory );
 
-	desc.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage;
-
-	VK_CHECK ( qvkCreateBuffer( vk.device, &desc, NULL, outBuffer ) );
-
-	qvkGetBufferMemoryRequirements( vk.device, *outBuffer, &mem_reqs );
-
-	flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
-	flagsInfo.pNext = NULL;
-	flagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-	flagsInfo.deviceMask = 0;
-
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.pNext = &flagsInfo;
-	alloc_info.allocationSize = mem_reqs.size;
-	alloc_info.memoryTypeIndex = vk_find_memory_type( mem_reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
-	VK_CHECK( qvkAllocateMemory( vk.device, &alloc_info, NULL, outMemory ) );
-	qvkBindBufferMemory( vk.device, *outBuffer, *outMemory, 0 );
-
-	desc.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	VK_CHECK( qvkCreateBuffer( vk.device, &desc, NULL, &staging ) );
-	qvkGetBufferMemoryRequirements( vk.device, staging, &mem_reqs );
-	alloc_info.pNext = NULL;
-	alloc_info.allocationSize = mem_reqs.size;
-	alloc_info.memoryTypeIndex = vk_find_memory_type( mem_reqs.memoryTypeBits,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	VK_CHECK( qvkAllocateMemory( vk.device, &alloc_info, NULL, &stagingMem ) );
-	qvkBindBufferMemory( vk.device, staging, stagingMem, 0 );
+	// host-visible staging source
+	vk_rt_create_buffer( size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		qfalse, &staging, &stagingMem );
 
 	VK_CHECK( qvkMapMemory ( vk.device, stagingMem, 0, VK_WHOLE_SIZE, 0, &data ) );
 	memcpy( data, src, (size_t)size );
@@ -149,6 +157,18 @@ static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsa
 	vk_end_command_buffer( cmd, __func__ );
 	qvkDestroyBuffer( vk.device, staging, NULL );
 	qvkFreeMemory( vk.device, stagingMem, NULL );
+}
+
+// Host-visible, persistently-mapped UBO for per-frame RT params (debug mode etc).
+// Created once per world load; mapped pointer kept in world_rt.rtParams,
+// destroyed in vk_rt_release_world.
+static void vk_rt_create_params_buffer( void )
+{
+	vk_rt_create_buffer( sizeof( rtParams_t ), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		qfalse, &world_rt.paramsBuffer, &world_rt.paramsMemory );
+
+	VK_CHECK( qvkMapMemory( vk.device, world_rt.paramsMemory, 0, VK_WHOLE_SIZE, 0, (void **)&world_rt.rtParams ) );
 }
 
 static void vk_rt_build_world_blas ( void ) {
@@ -201,9 +221,9 @@ static void vk_rt_build_world_blas ( void ) {
 		(unsigned)sizeInfo.buildScratchSize,
 		primCount );
 
-	vk_rt_create_storage( sizeInfo.accelerationStructureSize,
+	vk_rt_create_buffer( sizeInfo.accelerationStructureSize,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			qtrue, &world_rt.asBuffer, &world_rt.asMemory);
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, &world_rt.asBuffer, &world_rt.asMemory);
 	{
 		VkAccelerationStructureCreateInfoKHR asCreate;
 		Com_Memset( &asCreate, 0, sizeof(asCreate) );
@@ -223,9 +243,9 @@ static void vk_rt_build_world_blas ( void ) {
 		VkAccelerationStructureDeviceAddressInfoKHR blasAddrInfo;
 		VkCommandBuffer cmd;
 
-		vk_rt_create_storage( sizeInfo.buildScratchSize,
+		vk_rt_create_buffer( sizeInfo.buildScratchSize,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			qtrue, &scratchBuffer, &scratchMemory );
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, &scratchBuffer, &scratchMemory );
 
 		sAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		sAddr.pNext = NULL;
@@ -309,9 +329,9 @@ static void vk_rt_build_world_tlas ( void )
 	qvkGetAccelerationStructureBuildSizesKHR( vk.device,
 		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &instCount, &sizeInfo );
 
-	vk_rt_create_storage( sizeInfo.accelerationStructureSize,
+	vk_rt_create_buffer( sizeInfo.accelerationStructureSize,
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-		qfalse, &world_rt.tlasBuffer, &world_rt.tlasMemory );
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qfalse, &world_rt.tlasBuffer, &world_rt.tlasMemory );
 	{
 		VkAccelerationStructureCreateInfoKHR asCreate;
 		Com_Memset( &asCreate, 0, sizeof(asCreate) );
@@ -329,9 +349,9 @@ static void vk_rt_build_world_tlas ( void )
 		const VkAccelerationStructureBuildRangeInfoKHR *pRange = &range;
 		VkCommandBuffer cmd;
 
-		vk_rt_create_storage( sizeInfo.buildScratchSize,
+		vk_rt_create_buffer( sizeInfo.buildScratchSize,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			qtrue, &scratchBuffer, &scratchMemory);
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, &scratchBuffer, &scratchMemory);
 		sAddr.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		sAddr.pNext = NULL;
 		sAddr.buffer = scratchBuffer;
@@ -401,9 +421,9 @@ static void vk_rt_build_world_tlas ( void )
 		qvkGetAccelerationStructureBuildSizesKHR( vk.device,
 			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &eCount, &eSize );
 
-		vk_rt_create_storage( eSize.accelerationStructureSize,
+		vk_rt_create_buffer( eSize.accelerationStructureSize,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-			qfalse, &world_rt.tlasEmptyBuffer, &world_rt.tlasEmptyMemory );
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qfalse, &world_rt.tlasEmptyBuffer, &world_rt.tlasEmptyMemory );
 		{
 			VkAccelerationStructureCreateInfoKHR ec;
 			Com_Memset( &ec, 0, sizeof(ec) );
@@ -420,9 +440,9 @@ static void vk_rt_build_world_tlas ( void )
 			const VkAccelerationStructureBuildRangeInfoKHR *epr = &er;
 			VkCommandBuffer ecmd;
 
-			vk_rt_create_storage( eSize.buildScratchSize,
+			vk_rt_create_buffer( eSize.buildScratchSize,
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-				qtrue, &es, &esm );
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, &es, &esm );
 			esa.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 			esa.pNext = NULL;
 			esa.buffer = es;
@@ -512,6 +532,11 @@ void vk_rt_release_world( void )
 		qvkFreeMemory( vk.device, world_rt.lightMemory, NULL );
 	}
 
+	if ( world_rt.paramsBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.paramsBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.paramsMemory, NULL );
+	}
+
 	Com_Memset( &world_rt, 0, sizeof(world_rt) );
 }
 
@@ -527,6 +552,10 @@ static void vk_rt_build_world_lights(rtStaticLight_t *staticLights, uint32_t num
 
 	vk_rt_write_light_descriptor( vk.descriptor_rt );
 	vk_rt_write_light_descriptor(vk.descriptor_rt_empty);
+
+	vk_rt_create_params_buffer();
+	vk_rt_write_params_descriptor(vk.descriptor_rt );
+	vk_rt_write_params_descriptor(vk.descriptor_rt_empty );
 }
 
 void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
