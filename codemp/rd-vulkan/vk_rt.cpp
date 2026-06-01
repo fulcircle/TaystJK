@@ -542,7 +542,164 @@ void vk_rt_release_world( void )
 	Com_Memset( &world_rt, 0, sizeof(world_rt) );
 }
 
-void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
+#define MAX_RT_LIGHTS 1024
+
+static void R_rtLoadLights( world_t &worldData ) {
+	// Assume this is already loaded
+	world_t *w = &worldData;
+	char key[MAX_TOKEN_CHARS];
+	char value[MAX_TOKEN_CHARS];
+	const char *p, *token;
+	p = w->entityString;
+
+	rtStaticLight_t static_lights[MAX_RT_LIGHTS];
+	uint32_t count = 0;
+
+	while (1) {
+
+		qboolean isLight = qfalse;
+		qboolean hasOrigin = qfalse;
+		float color[3] = { 1, 1, 1};
+		float origin[3] = { 0, 0, 0};
+		float intensity = 300.0f;
+		uint32_t spawnflags = 0;
+
+		token = COM_ParseExt( &p, qtrue );
+		if (!*token) break;
+		if (*token != '{') continue;
+
+		while (1) {
+			token = COM_ParseExt(&p, qtrue);
+			Q_strncpyz(key, token, sizeof(key));
+
+			if (!*key || *key == '}') {
+				break;
+			}
+
+			token = COM_ParseExt(&p, qtrue);
+			Q_strncpyz(value, token, sizeof(value));
+
+			if (!*value) {
+				break;
+			}
+
+			if (!Q_stricmp(key, "classname") && !Q_stricmp(value, "light")) {
+				isLight = qtrue;
+			} else if (!Q_stricmp(key, "origin")) {
+				hasOrigin = qtrue;
+				sscanf(value, "%f %f %f", &origin[0], &origin[1], &origin[2]);
+			} else if (!Q_stricmp(key, "_color")) {
+				sscanf(value, "%f %f %f", &color[0], &color[1], &color[2]);
+			} else if (!Q_stricmp(key, "light") || !Q_stricmp(key, "_light")) {
+				intensity = atof(value);
+			} else if (!Q_stricmp(key, "spawnflags")) {
+				spawnflags = atoi(value);
+			}
+		}
+
+		if (isLight && hasOrigin) {
+			rtStaticLight_t light = { 0 };
+			light.intensity = intensity;
+			light.spawnflags = spawnflags;
+
+			VectorSet(light.color, color[0], color[1], color[2]);
+			VectorSet(light.origin, origin[0], origin[1], origin[2]);
+
+			static_lights[count++] = light;
+		}
+	}
+	if (count > 0) {
+		uint32_t size = count * sizeof(rtStaticLight_t);
+		worldData.rtStaticLights = (rtStaticLight_t *)Hunk_Alloc(
+			size, h_low );
+		memcpy(worldData.rtStaticLights, static_lights, size);
+		worldData.numStaticLights = count;
+	}
+
+	ri.Printf( PRINT_ALL, "RT: parsed %d static lights from %s\n",
+		worldData.numStaticLights, worldData.name );
+}
+
+static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
+	rtStaticLight_t tmp[MAX_RT_LIGHTS];
+	uint32_t m = 0;
+
+	backEnd.currentEntity = &tr.worldEntity;
+
+	msurface_t *surfaces = worldData.surfaces;
+	int numsurfaces = worldData.numsurfaces;
+
+	for ( int i = 0; i < numsurfaces; i++ ) {
+		msurface_t *surface = &surfaces[i];
+		if (surface->shader == NULL || surface->shader->surfaceLight <= 0.0f) {
+			continue;
+		}
+
+		int type = *surface->data;
+		if ( type != SF_FACE && type != SF_TRIANGLES && type != SF_GRID ) {
+			continue;
+		}
+
+		if ( worldData.numStaticLights + m >= MAX_RT_LIGHTS ) {  // no silent cap
+			ri.Printf( PRINT_WARNING, "RT: MAX_RT_LIGHTS hit, skipping rest of surface lights\n" );
+			break;
+		}
+
+		RB_BeginSurface(surface->shader, 0);
+		tess.allowVBO = qfalse;
+		rb_surfaceTable[type]( surface->data );
+
+		if ( tess.numVertexes == 0 ) {
+			tess.numIndexes = 0;
+			continue;
+		}
+
+		// Calculate centroid
+		vec3_t sum; VectorClear(sum);
+		vec3_t centroid;
+
+		for ( int k = 0; k < tess.numVertexes; k++ ) {
+			VectorAdd(tess.xyz[k], sum, sum);
+		}
+		VectorScale(sum, 1.0f / tess.numVertexes, centroid);
+
+		rtStaticLight_t *currLight = &tmp[m++];
+		VectorCopy(centroid, currLight->origin);
+		VectorSet(currLight->color, 1, 1, 1);
+		currLight->intensity = surface->shader->surfaceLight;	// raw for now; scale/tune later
+		currLight->spawnflags = 0;
+
+		ri.Printf( PRINT_ALL, "RT surfacelight: %s centroid (%.0f %.0f %.0f) sl=%.0f\n",
+			surface->shader->name, centroid[0], centroid[1], centroid[2],
+			surface->shader->surfaceLight );
+
+		tess.numVertexes = 0;
+		tess.numIndexes = 0;
+	}
+
+	if ( m == 0 ) {
+		return;
+	}
+
+	// Append synthesized lights to worldData.rtStaticLights. The Hunk allocator
+	// can't grow in place, so alloc a combined block, copy existing + new, repoint.
+	uint32_t total = worldData.numStaticLights + m;
+	rtStaticLight_t *combined =
+		(rtStaticLight_t *)Hunk_Alloc( total * sizeof(rtStaticLight_t), h_low );
+
+	if ( worldData.numStaticLights > 0 ) {
+		memcpy( combined, worldData.rtStaticLights,
+			worldData.numStaticLights * sizeof(rtStaticLight_t) );
+	}
+	memcpy( combined + worldData.numStaticLights, tmp, m * sizeof(rtStaticLight_t) );
+
+	worldData.rtStaticLights = combined;
+	worldData.numStaticLights = total;
+
+	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights (%u total)\n", m, total );
+}
+
+static void R_rtBuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights ) {
 	rtStaticLight_t  dummyLight = {};
 	rtStaticLight_t *lights;
 	if (!vk.rayQuery) return;
@@ -569,7 +726,17 @@ void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLig
 
 }
 
-void R_RT_BuildWorldGeometryBuffers(msurface_t *surf, int surfCount) {
+// Build the world's RT static light list and upload it. Order matters:
+// R_rtLoadLights sets the list from entity lights (overwriting), then
+// R_rtSynthesizeSurfaceLights appends emissive-surface lights, then we upload
+// the combined list. Synthesize must run after Load.
+void R_rtBuildWorldLights( world_t &worldData ) {
+	R_rtLoadLights( worldData );
+	R_rtSynthesizeSurfaceLights( worldData );
+	R_rtBuildWorldLightBuffers( worldData.rtStaticLights, worldData.numStaticLights );
+}
+
+void R_rtBuildWorldGeometryBuffers(msurface_t *surf, int surfCount) {
 	msurface_t *sf;
 	int i, k, type;
 	int numVertexes = 0, numIndexes = 0;
@@ -674,7 +841,7 @@ void R_RT_BuildWorldGeometryBuffers(msurface_t *surf, int surfCount) {
 	vk_rt_write_params_descriptor(vk.descriptor_rt_empty );
 }
 
-void R_RT_UpdateParams( void ) {
+void R_rtUpdateParams( void ) {
 	if (!vk.rayQuery || world_rt.rtParams == NULL) {
 		return;
 	}

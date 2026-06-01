@@ -2680,9 +2680,9 @@ void		ComputeTexCoords( const int b, const textureBundle_t *bundle );
 #ifdef USE_VBO
 // VBO functions
 extern void R_BuildWorldVBO( msurface_t *surf, int surfCount );
-extern void R_RT_BuildWorldGeometryBuffers( msurface_t *surf, int surfCount );
-extern void R_RT_BuildWorldLightBuffers( rtStaticLight_t *staticLights, uint32_t numLights );
-extern void R_RT_UpdateParams ( void );
+extern void R_rtBuildWorldGeometryBuffers( msurface_t *surf, int surfCount );
+extern void R_rtBuildWorldLights( world_t &worldData );
+extern void R_rtUpdateParams ( void );
 extern void R_BuildSurfaceSpritesVBO( const world_t &worldData, int index ) ;
 extern void R_BuildMDXM( model_t *mod, mdxmHeader_t *mdxm );
 extern void R_BuildMD3( model_t *mod, mdvModel_t *mdvModel );

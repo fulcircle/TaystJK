@@ -22,6 +22,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 // tr_map.c
 
+#include "qcommon/q_math.h"
 #include "qcommon/q_shared.h"
 #include "qcommon/q_string.h"
 #include "tr_local.h"
@@ -2287,83 +2288,6 @@ static void R_LoadEntities( const lump_t *l, world_t &worldData ) {
 	VectorScale( tr.sunAmbient, ambient, tr.sunAmbient);
 }
 
-#define MAX_RT_LIGHTS 1024
-static void R_LoadLights(world_t &worldData) {
-	// Assume this is already loaded
-	world_t *w = &worldData;
-	char key[MAX_TOKEN_CHARS];
-	char value[MAX_TOKEN_CHARS];
-	const char *p, *token;
-	p = w->entityString;
-
-	rtStaticLight_t static_lights[MAX_RT_LIGHTS];
-	uint32_t count = 0;
-
-	while (1) {
-
-		qboolean isLight = qfalse;
-		qboolean hasOrigin = qfalse;
-		float color[3] = { 1, 1, 1};
-		float origin[3] = { 0, 0, 0};
-		float intensity = 300.0f;
-		uint32_t spawnflags = 0;
-
-		token = COM_ParseExt( &p, qtrue );
-		if (!*token) break;
-		if (*token != '{') continue;
-
-		while (1) {
-			token = COM_ParseExt(&p, qtrue);
-			Q_strncpyz(key, token, sizeof(key));
-
-			if (!*key || *key == '}') {
-				break;
-			}
-
-			token = COM_ParseExt(&p, qtrue);
-			Q_strncpyz(value, token, sizeof(value));
-
-			if (!*value) {
-				break;
-			}
-
-			if (!Q_stricmp(key, "classname") && !Q_stricmp(value, "light")) {
-				isLight = qtrue;
-			} else if (!Q_stricmp(key, "origin")) {
-				hasOrigin = qtrue;
-				sscanf(value, "%f %f %f", &origin[0], &origin[1], &origin[2]);
-			} else if (!Q_stricmp(key, "_color")) {
-				sscanf(value, "%f %f %f", &color[0], &color[1], &color[2]);
-			} else if (!Q_stricmp(key, "light") || !Q_stricmp(key, "_light")) {
-				intensity = atof(value);
-			} else if (!Q_stricmp(key, "spawnflags")) {
-				spawnflags = atoi(value);
-			}
-		}
-
-		if (isLight && hasOrigin) {
-			rtStaticLight_t light = { 0 };
-			light.intensity = intensity;
-			light.spawnflags = spawnflags;
-
-			VectorSet(light.color, color[0], color[1], color[2]);
-			VectorSet(light.origin, origin[0], origin[1], origin[2]);
-
-			static_lights[count++] = light;
-		}
-	}
-	if (count > 0) {
-		uint32_t size = count * sizeof(rtStaticLight_t);
-		worldData.rtStaticLights = (rtStaticLight_t *)Hunk_Alloc(
-			size, h_low );
-		memcpy(worldData.rtStaticLights, static_lights, size);
-		worldData.numStaticLights = count;
-	}
-
-	ri.Printf( PRINT_ALL, "RT: parsed %d static lights from %s\n",
-		worldData.numStaticLights, worldData.name );
-}
-
 /*
 =================
 R_GetEntityToken
@@ -2480,15 +2404,14 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index )
 #ifdef USE_VBO
 	R_BuildWorldVBO(s_worldData.surfaces, s_worldData.numsurfaces);
 #endif
-	R_RT_BuildWorldGeometryBuffers(s_worldData.surfaces, s_worldData.numsurfaces);
+	R_rtBuildWorldGeometryBuffers(s_worldData.surfaces, s_worldData.numsurfaces);
 
 	worldData.dataSize = (byte *)Hunk_Alloc(0, h_low) - startMarker;
 
 	if (!index)
 	{
 		R_LoadEntities( &header->lumps[LUMP_ENTITIES], worldData );
-		R_LoadLights(worldData);
-		R_RT_BuildWorldLightBuffers(worldData.rtStaticLights, worldData.numStaticLights);
+		R_rtBuildWorldLights(worldData);
 		R_LoadLightGrid( &header->lumps[LUMP_LIGHTGRID], worldData );
 		R_LoadLightGridArray( &header->lumps[LUMP_LIGHTARRAY], worldData );
 
