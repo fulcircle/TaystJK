@@ -21,6 +21,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 ===========================================================================
 */
 
+#include "mp3code/config.h"
 #include "tr_local.h"
 #include "vk_local.h"
 #include "vulkan/vulkan_core.h"
@@ -766,6 +767,7 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         float   identity_color;
         float   identity_alpha;
         int32_t acff;
+        int32_t rt_direct_lighting;
 #ifdef USE_VBO_SS
         SurfaceSpritesData ss;
 #endif
@@ -1128,6 +1130,10 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
 		frag_spec_data.acff = 0;
 	}
 
+	frag_spec_data.rt_direct_lighting = ( vk.rayQuery && vbo == 0 &&
+		(state_bits & GLS_BLEND_BITS) == 0 &&
+		!(state_bits & GLS_DEPTHTEST_DISABLE) ? 1 : 0);
+
 	frag_spec_data.hw_fog = vert_spec_data.hw_fog = vk.hw_fog;
 
 	//
@@ -1198,6 +1204,9 @@ VkPipeline vk_create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPa
         frag_spec_info.mapEntryCount = 12;                        // base 0-11
     }
 #endif
+
+	INIT_SPEC_ENTRY_FRAG( 12, rt_direct_lighting );
+	frag_spec_info.mapEntryCount = 13;
 
     shader_stages[1].pSpecializationInfo = &frag_spec_info;
 

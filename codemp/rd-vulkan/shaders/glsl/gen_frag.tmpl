@@ -230,6 +230,8 @@ layout (constant_id = 10) const float identity_alpha = 1.0;
 layout (constant_id = 11) const int acff = 0; // NONE, RGB, RGBA, ALPHA
 #endif
 
+layout (constant_id = 12) const int rt_direct_lighting = 0;
+
 #ifdef USE_ATEST
 float CorrectAlpha(float threshold, float alpha, vec2 tc)
 {
@@ -713,18 +715,22 @@ void main() {
 	vec3 worldNormal = normalize( cross( dFdy(var_WorldPos), dFdx(var_WorldPos) ) );
 	vec3 radiance = vec3 ( 0.0 );
 
-	for (int i = 0; i < lights.length(); i++) {
-		vec3 toLight = lights[i].origin - var_WorldPos;
-		float dist = length ( toLight );
-		vec3 L = toLight / dist;
-		float NdotL = max ( dot (worldNormal, L), 0.0 );
-		float falloff = 100.0 / ( dist * dist );
-		float vis = traceShadow( var_WorldPos, lights[i].origin );
+	out_color = base;
 
-		radiance += lights[i].color * lights[i].intensity * falloff * NdotL * vis;
+	if ( rt_direct_lighting == 1 ) {
+		for (int i = 0; i < lights.length(); i++) {
+			vec3 toLight = lights[i].origin - var_WorldPos;
+			float dist = length ( toLight );
+			vec3 L = toLight / dist;
+			float NdotL = max ( dot (worldNormal, L), 0.0 );
+			float falloff = 100.0 / ( dist * dist );
+			float vis = traceShadow( var_WorldPos, lights[i].origin );
+
+			radiance += lights[i].color * lights[i].intensity * falloff * NdotL * vis;
+		}
+
+		out_color = vec4( base.rgb * radiance, base.a );
 	}
-
-	out_color = vec4( base.rgb * radiance, base.a );
 
 #endif
 }
