@@ -154,6 +154,7 @@ layout(set = 5, binding = 2) uniform RtParams {
     float u_falloffScale;
     int u_debugLightIndex; // -1 = aggregate all lights; >=0 = isolate that light
     uint u_numLights; // valid light count (binding 1 may hold a dummy element)
+    uint u_rtEnable; // 0 = bypass RT direct lighting (show lightmap/fullbright)
 };
 
 // Trace a shadow ray from worldPos toward lightPos against the world TLAS.
@@ -723,7 +724,7 @@ void main() {
 
     out_color = base;
 
-    if (rt_direct_lighting == 1) {
+    if (rt_direct_lighting == 1 && u_rtEnable != 0u) {
         // debug aggregates, reduced across all lights
         float dbgMaxNdotL = 0.0;
         float dbgMaxVis = 0.0;
@@ -746,7 +747,7 @@ void main() {
             // Per-light reach: the distance where the un-windowed inverse-square
             // contribution drops below RT_LIGHT_FLOOR. Brighter lights reach farther
             // (radius ~ sqrt(intensity)). Raise the floor for tighter pools / more FPS.
-            const float RT_LIGHT_FLOOR = 0.05;
+            const float RT_LIGHT_FLOOR = 0.02;
             float radius = sqrt(lights[i].intensity * u_falloffScale / RT_LIGHT_FLOOR);
             if (dist >= radius)
                 continue; // beyond reach: contribution ~0, skip the ray (free, no leak)

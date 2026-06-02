@@ -12,6 +12,8 @@ typedef struct {
 	float 						falloffScale;
 	int32_t						debugLightIndex;
 	uint32_t					numLights;
+	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
+	uint32_t					_pad[3];		// std140: pad block to 32 bytes
 } rtParams_t;
 
 typedef struct {
@@ -881,5 +883,6 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->lightDebugMode = r_rtDebugLighting->integer;
 	world_rt.rtParams->falloffScale = 100.0f;
 	world_rt.rtParams->debugLightIndex = r_rtDebugLightIndex->integer;
+	world_rt.rtParams->rtEnable = r_rtEnable->integer;
 	
 }
