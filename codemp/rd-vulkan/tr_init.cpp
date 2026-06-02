@@ -186,6 +186,8 @@ cvar_t	*r_device;
 
 cvar_t  *r_rtDebugLighting;
 cvar_t  *r_rtDebugLightIndex;
+cvar_t  *r_rtSurfaceLightOffset;
+cvar_t  *r_rtSurfaceLightScale;
 //cvar_t	*r_stencilbits;
 cvar_t	*r_ext_multisample;
 cvar_t	*r_ext_supersample;
@@ -878,6 +880,8 @@ void R_Register( void )
 	r_lightmap							= ri.Cvar_Get( "r_lightmap",						"0",						CVAR_ARCHIVE_ND, "" );
 	r_rtDebugLighting					= ri.Cvar_Get( "r_rtDebugLighting",					"0",						CVAR_CHEAT, "RT lighting debug view" );
 	r_rtDebugLightIndex					= ri.Cvar_Get( "r_rtDebugLightIndex",				"-1",						CVAR_CHEAT, "RT debug: isolate one light index (-1 = all)" );
+	r_rtSurfaceLightOffset				= ri.Cvar_Get( "r_rtSurfaceLightOffset",			"16",						CVAR_CHEAT, "RT: push synthesized surface lights this far off their surface (read at map load)" );
+	r_rtSurfaceLightScale				= ri.Cvar_Get( "r_rtSurfaceLightScale",				"1e-5",						CVAR_CHEAT, "RT: scale surface light intensity (read at map load)");
 	r_distanceCull						= ri.Cvar_Get( "r_distanceCull",					"0",						CVAR_ARCHIVE_ND, "" );
 	r_portalOnly						= ri.Cvar_Get( "r_portalOnly",						"0",						CVAR_CHEAT, "" );
 	r_skipBackEnd						= ri.Cvar_Get( "r_skipBackEnd",						"0",						CVAR_CHEAT, "" );

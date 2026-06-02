@@ -1957,6 +1957,8 @@ extern cvar_t	*r_defaultImage;
 extern cvar_t	*r_device;
 extern cvar_t	*r_rtDebugLighting;
 extern cvar_t	*r_rtDebugLightIndex;
+extern cvar_t	*r_rtSurfaceLightOffset;
+extern cvar_t	*r_rtSurfaceLightScale;
 extern cvar_t	*r_ext_multisample;
 extern cvar_t	*r_ext_supersample;
 extern cvar_t	*r_ext_alpha_to_coverage;

@@ -1,3 +1,4 @@
+#include "qcommon/q_math.h"
 #include "qcommon/q_shared.h"
 #include "tr_local.h"
 #include "vk_local.h"
@@ -655,23 +656,54 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 		}
 
 		// Calculate centroid
-		vec3_t sum; VectorClear(sum);
+		vec3_t sumVertex; VectorClear(sumVertex);
 		vec3_t centroid;
 
 		for ( int k = 0; k < tess.numVertexes; k++ ) {
-			VectorAdd(tess.xyz[k], sum, sum);
+			VectorAdd(tess.xyz[k], sumVertex, sumVertex);
 		}
-		VectorScale(sum, 1.0f / tess.numVertexes, centroid);
-
+		VectorScale(sumVertex, 1.0f / tess.numVertexes, centroid);
+		
+		// Average the surface normal, then shift the centroid off the surface
+		// along it (into the room) so the panel's own fragments get N.L > 0 and
+		// the shadow ray has real length. r_rtSurfaceLightOffset is read at world
+		// load, so changing it takes effect on the next map load.
+		vec3_t avgNormal; VectorClear( avgNormal );
+		for (int j = 0; j < tess.numVertexes; j++) {
+			VectorAdd( tess.normal[j], avgNormal, avgNormal );
+		}
+		if (VectorNormalize( avgNormal ) > 0.0001f) {
+			VectorMA(centroid, r_rtSurfaceLightOffset->value, avgNormal, centroid);
+		}
+		
 		rtStaticLight_t *currLight = &tmp[m++];
+		
 		VectorCopy(centroid, currLight->origin);
+
+		// Calculate total area of surface
+		float area = 0.0f;
+		for ( int k = 0; k + 2 < tess.numIndexes; k += 3 ) {
+			float *v0 = tess.xyz[ tess.indexes[k + 0] ];
+			float *v1 = tess.xyz[ tess.indexes[k + 1] ];
+			float *v2 = tess.xyz[ tess.indexes[k + 2] ];
+
+			vec3_t e0, e1, cr;
+			VectorSubtract( v1, v0, e0 );
+			VectorSubtract( v2, v0, e1 );
+			CrossProduct( e0, e1, cr );
+			area += 0.5f * VectorLength( cr );   // magnitude → winding-independent
+		} 
+
+		float intensity = surface->shader->surfaceLight * area;
+
 		VectorSet(currLight->color, 1, 1, 1);
-		currLight->intensity = surface->shader->surfaceLight;	// raw for now; scale/tune later
+		
+		currLight->intensity = intensity * r_rtSurfaceLightScale->value;
 		currLight->spawnflags = 0;
 
-		ri.Printf( PRINT_ALL, "RT surfacelight: %s centroid (%.0f %.0f %.0f) sl=%.0f\n",
+		ri.Printf( PRINT_ALL, "RT surfacelight: %s centroid (%.0f %.0f %.0f) sl=%.0f intensity=%.1f\n",
 			surface->shader->name, centroid[0], centroid[1], centroid[2],
-			surface->shader->surfaceLight );
+			surface->shader->surfaceLight, currLight->intensity );
 
 		tess.numVertexes = 0;
 		tess.numIndexes = 0;
