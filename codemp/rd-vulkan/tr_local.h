@@ -69,6 +69,7 @@ typedef enum {
 
 // Vulkan
 #include "vk_local.h"
+#include "vk_rt/vk_rt.h"
 
 // GL constants substitutions
 typedef enum {
@@ -1167,14 +1168,6 @@ typedef struct
 	byte		latLong[2];
 } mgrid_t;
 
-// std430 layout: ordered for GPU 16-byte alignment
-typedef struct {
-		float color[3];
-		float intensity;
-		float origin[3];
-		uint32_t spawnflags;
-} rtStaticLight_t;
-
 typedef struct world_s {
 	char		name[MAX_QPATH];		// ie: maps/tim_dm2.bsp
 	char		baseName[MAX_QPATH];	// ie: tim_dm2
@@ -1214,7 +1207,7 @@ typedef struct world_s {
 	vec3_t		lightGridStep;
 
 	int			    numStaticLights;
-	rtStaticLight_t *rtStaticLights;
+	rtLight_t *rtStaticLights;
 
 	mgrid_t		*lightGridData;
 	word		*lightGridArray;
