@@ -300,7 +300,7 @@ void RB_ShadowFinish(void)
 	vk_world.modelview_transform[15] = 1.0f;
 
 	vk_bind_pipeline(vk.std_pipeline.shadow_finish_pipeline);
-	vk_update_mvp(NULL);
+	vk_push_constant_mvp(NULL);
 	vk_bind_geometry(TESS_XYZ | TESS_RGBA0);
 	vk_draw_geometry(DEPTH_RANGE_NORMAL, qfalse);
 

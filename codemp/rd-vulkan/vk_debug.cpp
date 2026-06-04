@@ -459,7 +459,7 @@ void R_DebugGraphics( void ) {
 	}
 
 	vk_bind(tr.whiteImage);
-	vk_update_mvp(NULL);
+	vk_push_constant_mvp(NULL);
 
 	ri.CM_DrawDebugSurface(R_DebugPolygon);
 }

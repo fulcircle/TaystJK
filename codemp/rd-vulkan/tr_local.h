@@ -1207,7 +1207,7 @@ typedef struct world_s {
 	vec3_t		lightGridStep;
 
 	int			    numStaticLights;
-	rtLight_t *rtStaticLights;
+	rtLight_t       *rtStaticLights;
 
 	mgrid_t		*lightGridData;
 	word		*lightGridArray;

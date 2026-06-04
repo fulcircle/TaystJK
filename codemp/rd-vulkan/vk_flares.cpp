@@ -340,7 +340,7 @@ static void RB_TestFlare( flare_t *f ) {
 	m = vk_ortho(backEnd.viewParms.viewportX, backEnd.viewParms.viewportX + backEnd.viewParms.viewportWidth,
 		backEnd.viewParms.viewportY, backEnd.viewParms.viewportY + backEnd.viewParms.viewportHeight, 0, 1);
 
-	vk_update_mvp(m);
+	vk_push_constant_mvp(m);
 
 	tess.xyz[0][0] = f->windowX;
 	tess.xyz[0][1] = f->windowY;
@@ -520,7 +520,7 @@ void RB_RenderFlares( void ) {
 		return;		// none visible
 	}
 
-	vk_update_mvp( NULL );
+	vk_push_constant_mvp( NULL );
 
 	for ( f = r_activeFlares; f; f = f->next ) {
 		if ( f->frameSceneNum == backEnd.viewParms.frameSceneNum && f->drawIntensity && f->portalView == backEnd.viewParms.portalView ) {

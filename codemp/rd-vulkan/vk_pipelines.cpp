@@ -174,11 +174,17 @@ void vk_create_pipeline_layout( void )
     // Pipeline layouts
     VkDescriptorSetLayout set_layouts[6];
     VkPipelineLayoutCreateInfo desc;
-    VkPushConstantRange push_range;
+    VkPushConstantRange push_ranges[2];
 
-    push_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    push_range.offset = 0;
-    push_range.size = 64; // 16 mvp floats + 16
+    // [0] vertex   : MVP matrix       (offset 0,  64B)  -- VK_PC_MVP
+    // [1] fragment : RT emitter flag  (offset 64,  4B)  -- VK_PC_EMITTER, see vk_push_constants()
+    push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    push_ranges[0].offset = 0;
+    push_ranges[0].size = 64;
+
+    push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    push_ranges[1].offset = 64;
+    push_ranges[1].size = sizeof(int); // is_emmiter
 
     // standard pipelines
     set_layouts[0] = vk.set_layout_uniform; // fog/dlight parameters
@@ -192,8 +198,8 @@ void vk_create_pipeline_layout( void )
     desc.flags = 0;
     desc.setLayoutCount = (vk.maxBoundDescriptorSets >= VK_DESC_COUNT) ? VK_DESC_COUNT : 4;
     desc.pSetLayouts = set_layouts;
-    desc.pushConstantRangeCount = 1;
-    desc.pPushConstantRanges = &push_range;
+    desc.pushConstantRangeCount = 2;
+    desc.pPushConstantRanges = push_ranges;
 
     if ( vk.rayQuery && vk.maxBoundDescriptorSets > VK_DESC_COUNT ) {
     	set_layouts[VK_DESC_RT] = vk.set_layout_rt;
@@ -225,8 +231,8 @@ void vk_create_pipeline_layout( void )
     desc.flags = 0;
     desc.setLayoutCount = 1;
     desc.pSetLayouts = set_layouts;
-    desc.pushConstantRangeCount = 1;
-    desc.pPushConstantRanges = &push_range;
+    desc.pushConstantRangeCount = 2;
+    desc.pPushConstantRanges = push_ranges;
 
     VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_storage ) );
 

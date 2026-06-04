@@ -127,10 +127,9 @@ float CalcLightAttenuation(float point, float normDist)
 #endif
 
 struct RtLight {
-    vec3 color;
-    float intensity;
-    vec3 origin;
-    uint spawnflags;
+    float color[3]; // emitted radiance (matches rtLight_t color[3])
+    float positions[9]; // v0, v1, v2 (flat 3x vec3)
+    uint type; // LIGHT_TYPE_POLYGON
 };
 
 layout(set = 1, binding = 0) uniform sampler2D texture0;
@@ -155,6 +154,10 @@ layout(set = 5, binding = 2) uniform RtParams {
     int u_debugLightIndex; // -1 = aggregate all lights; >=0 = isolate that light
     uint u_numLights; // valid light count (binding 1 may hold a dummy element)
     uint u_rtEnable; // 0 = bypass RT direct lighting (show lightmap/fullbright)
+};
+
+layout(push_constant) uniform EmitterPC {
+    layout(offset = 64) int u_isEmitter;
 };
 
 // Trace a shadow ray from worldPos toward lightPos against the world TLAS.
@@ -724,79 +727,32 @@ void main() {
 
     out_color = base;
 
-    if (rt_direct_lighting == 1 && u_rtEnable != 0u) {
-        // debug aggregates, reduced across all lights
-        float dbgMaxNdotL = 0.0;
-        float dbgMaxVis = 0.0;
-        float dbgMaxFalloff = 0.0;
-        int dbgCount = 0;
-        // per-light values for the selected light (u_debugLightIndex), if any
-        float dbgSelNdotL = 0.0;
-        float dbgSelVis = 0.0;
-        float dbgSelFalloff = 0.0;
-
+    if (u_isEmitter == 0 && rt_direct_lighting == 1 && u_rtEnable != 0u) {
         for (int i = 0; i < int(u_numLights); i++) {
-            vec3 toLight = lights[i].origin - var_WorldPos;
+            vec3 v0 = vec3(lights[i].positions[0], lights[i].positions[1], lights[i].positions[2]);
+            vec3 v1 = vec3(lights[i].positions[3], lights[i].positions[4], lights[i].positions[5]);
+            vec3 v2 = vec3(lights[i].positions[6], lights[i].positions[7], lights[i].positions[8]);
+            vec3 lightPos = (v0 + v1 + v2) / 3.0;
+
+            vec3 toLight = lightPos - var_WorldPos;
             float dist = length(toLight);
             vec3 L = toLight / dist;
             float NdotL = max(dot(worldNormal, L), 0.0);
-            // Back-facing lights contribute exactly zero -- skip them (exact, free).
             if (NdotL <= 0.0)
+                continue; // back-facing: zero contribution, skip the ray
+
+            float minDist = 32.0;
+            float falloff = u_falloffScale / max(dist * dist, minDist * minDist);
+            vec3 lcolor = vec3(lights[i].color[0], lights[i].color[1], lights[i].color[2]);
+            float contrib = max(lcolor.r, max(lcolor.g, lcolor.b)) * falloff * NdotL;
+            if (contrib < 0.01)
                 continue;
 
-            // Per-light reach: the distance where the un-windowed inverse-square
-            // contribution drops below RT_LIGHT_FLOOR. Brighter lights reach farther
-            // (radius ~ sqrt(intensity)). Raise the floor for tighter pools / more FPS.
-            const float RT_LIGHT_FLOOR = 0.02;
-            float radius = sqrt(lights[i].intensity * u_falloffScale / RT_LIGHT_FLOOR);
-            if (dist >= radius)
-                continue; // beyond reach: contribution ~0, skip the ray (free, no leak)
-
-            // Near-clamped inverse-square, windowed so it eases smoothly to 0 at
-            // radius -- no hard cutoff circle. minDist caps the near hotspot.
-            float minDist = 32.0;
-            float r2 = dist * dist;
-            float t = r2 / (radius * radius); // (d/r)^2
-            float win = clamp(1.0 - t * t, 0.0, 1.0); // 1 - (d/r)^4, smooth rolloff to 0 at radius
-            float falloff = (u_falloffScale / max(r2, minDist * minDist)) * win * win;
-
-            float vis = traceShadow(var_WorldPos, lights[i].origin);
-            radiance += lights[i].color * lights[i].intensity * falloff * NdotL * vis;
-
-            dbgMaxNdotL = max(dbgMaxNdotL, NdotL);
-            dbgMaxVis = max(dbgMaxVis, vis);
-            dbgMaxFalloff = max(dbgMaxFalloff, falloff);
-            if (NdotL * falloff * vis > 0.0) dbgCount++;
-
-            if (i == u_debugLightIndex) {
-                dbgSelNdotL = NdotL;
-                dbgSelVis = vis;
-                dbgSelFalloff = falloff;
-            }
+            float vis = traceShadow(var_WorldPos, lightPos);
+            radiance += lcolor * falloff * NdotL * vis;
         }
 
-        bool sel = (u_debugLightIndex >= 0);
-
-        switch (u_LightDebugMode) {
-            case 1u: // N.L  (white = surface faces the light)
-            out_color = vec4(vec3(sel ? dbgSelNdotL : dbgMaxNdotL), 1.0);
-            break;
-            case 2u: // visibility / shadow  (white = lit, black = occluded)
-            out_color = vec4(vec3(sel ? dbgSelVis : dbgMaxVis), 1.0);
-            break;
-            case 3u: // distance falloff  (clamped to [0,1] for display)
-            out_color = vec4(vec3(min(sel ? dbgSelFalloff : dbgMaxFalloff, 1.0)), 1.0);
-            break;
-            case 4u:
-            { // light-count heatmap  (black -> red -> yellow)
-                float t = float(dbgCount) / 4.0;
-                out_color = vec4(min(t, 1.0), max(t - 1.0, 0.0), 0.0, 1.0);
-                break;
-            }
-            default: // 0 = normal RT-lit
-            out_color = vec4(base.rgb * radiance, base.a);
-            break;
-        }
+        out_color = vec4(base.rgb * radiance, base.a);
     }
 
     #endif

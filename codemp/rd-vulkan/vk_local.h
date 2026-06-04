@@ -652,7 +652,17 @@ typedef struct {
 
 	// MVP
 	float modelview_transform[16]  QALIGN(16);
+
+	int is_emmiter;
 } Vk_World;
+
+// Push-constant dirty bits: which push-constant ranges vk_push_constants()
+// still needs to (re)upload into the current command buffer. Push constants are
+// command-buffer state, so the mask is forced all-dirty when recording begins.
+typedef enum {
+	VK_PC_MVP     = 1 << 0, // vertex range   [0,64)  - modelview-projection matrix
+	VK_PC_EMITTER = 1 << 1, // fragment range [64,68) - RT surface-emitter flag
+} vkPushConstantBit_t;
 
 typedef struct vk_tess_s {
 	VkCommandBuffer		command_buffer;
@@ -696,6 +706,7 @@ typedef struct vk_tess_s {
 	uint32_t			entity_ubo_offset[REFENTITYNUM_WORLD + 1];
 	uint32_t			bones_ubo_offset;
 	uint32_t			fogs_ubo_offset;
+	uint32_t			push_dirty; // dirty bits (vkPushConstantBit_t): push-constant ranges pending (re)upload
 } vk_tess_t;
 
 // Vk_Instance contains engine-specific vulkan resources that persist entire renderer lifetime.
@@ -1186,7 +1197,7 @@ void		vk_clear_depthstencil_attachments( qboolean clear_stencil );
 // shade geometry
 void		vk_set_2d( void );
 void		vk_set_depthrange( const Vk_Depth_Range depthRange );
-void		vk_update_mvp( const float *m );
+void		vk_push_constant_mvp( const float *m );
 
 void		vk_create_render_passes( void );
 void		vk_destroy_render_passes( void );

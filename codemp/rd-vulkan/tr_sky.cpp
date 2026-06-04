@@ -757,7 +757,7 @@ void RB_DrawSun( float scale, shader_t *shader ) {
 	if ( !backEnd.skyRenderedThisView )
 		return;
 
-	vk_update_mvp( NULL );
+	vk_push_constant_mvp( NULL );
 
 	dist = backEnd.viewParms.zFar / 1.75;		// div sqrt(3)
 	size = dist * scale;

@@ -78,28 +78,40 @@ static void get_mvp_transform( float *mvp )
 	}
 }
 
-void vk_update_mvp( const float *m ) {
-	float push_constants[16]; // mvp transform
-
+void vk_push_constant_mvp( const float *m ) {
+	float mvp_transform[16];
 	// Specify push constants.
 	if (m)
-		Com_Memcpy(push_constants, m, sizeof(push_constants));
+		Com_Memcpy(mvp_transform, m, sizeof(mvp_transform));
 	else
-		get_mvp_transform(push_constants);
+		get_mvp_transform(mvp_transform);
 
 	qvkCmdPushConstants(vk.cmd->command_buffer, vk.pipeline_layout,
-		VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constants), push_constants);
-
+		VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mvp_transform), mvp_transform);
+	
 #ifdef USE_VK_STATS
-	vk.stats.push_size += sizeof(push_constants);
+	vk.stats.push_size += sizeof(mvp_transform);
 #endif
+
+}
+void vk_push_constants() {
+	if (vk.cmd->push_dirty & VK_PC_MVP) {
+		vk_push_constant_mvp(NULL);
+	}
+
+	if (vk.cmd->push_dirty & VK_PC_EMITTER) {
+		qvkCmdPushConstants(vk.cmd->command_buffer, vk.pipeline_layout,
+			VK_SHADER_STAGE_FRAGMENT_BIT, 64, sizeof(vk_world.is_emmiter), &vk_world.is_emmiter);
+	}
+
+	vk.cmd->push_dirty = 0;
 }
 
 void vk_set_2d( void )
 {
 	backEnd.projection2D = qtrue;
 
-	vk_update_mvp(NULL);
+	vk_push_constant_mvp(NULL);
 
 	// force depth range and viewport/scissor updates
 	vk.cmd->depth_range = DEPTH_RANGE_COUNT;
@@ -895,6 +907,7 @@ static void vk_update_depth_range( Vk_Depth_Range depth_range )
 
 void vk_draw_geometry( Vk_Depth_Range depth_range, qboolean indexed )
 {
+	vk_push_constants();
 	// geometry buffer overflow happened this frame
 	if ( vk.geometry_buffer_size_new )
 		return;

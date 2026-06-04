@@ -22,6 +22,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "tr_local.h"
+#include "vk_local.h"
 
 void vk_create_sync_primitives( void )
 {
@@ -1225,6 +1226,7 @@ _retry:
 #endif
 
     vk.cmd->last_pipeline = VK_NULL_HANDLE;
+    vk.cmd->push_dirty = VK_PC_MVP | VK_PC_EMITTER;
 
     backEnd.screenMapDone = qfalse;
 

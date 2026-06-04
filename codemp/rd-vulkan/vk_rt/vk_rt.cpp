@@ -556,6 +556,7 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 
 	msurface_t *surfaces = worldData.surfaces;
 	int numsurfaces = worldData.numsurfaces;
+	vec3_t white = {1, 1, 1};
 	
 	arena_t lightArena = arena_init(sizeof(rtLight_t), alignof(rtLight_t));
 	for ( int i = 0; i < numsurfaces; i++ ) {
@@ -588,7 +589,7 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 			rtLight_t *polygon = (rtLight_t *)arena_alloc(&lightArena);
 			
 			polygon->type = LIGHT_TYPE_POLYGON;
-			VectorSet( polygon->color,  1, 1, 1 );
+			VectorScale(white, surface->shader->surfaceLight, polygon->color);
 			
 			VectorCopy(tess.xyz[ tess.indexes[k + 0] ], polygon->positions + 0 );
 			VectorCopy(tess.xyz[ tess.indexes[k + 1] ], polygon->positions + 3);
@@ -598,19 +599,19 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 		tess.numVertexes = 0;
 		tess.numIndexes = 0;
 	}
-
+	
+	worldData.numStaticLights = lightArena.numElements;
+	worldData.rtStaticLights = NULL;
 	if (lightArena.numElements > 0) {
 		worldData.rtStaticLights =
 			(rtLight_t *)Hunk_Alloc( lightArena.used, h_low );
 	
 		memcpy( worldData.rtStaticLights, lightArena.base, lightArena.used);
-	
-		worldData.numStaticLights = lightArena.numElements;
 
-		arena_free(&lightArena);
 	}
-
 	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lightArena.numElements, numsurfaces );
+	
+	arena_free(&lightArena);
 }
 
 static void R_rtBuildWorldLightBuffers( rtLight_t *staticLights, uint32_t numLights ) {
@@ -756,7 +757,7 @@ void R_rtUpdateParams( void ) {
 	}
 
 	world_rt.rtParams->lightDebugMode = r_rtDebugLighting->integer;
-	world_rt.rtParams->falloffScale = 100.0f;
+	world_rt.rtParams->falloffScale = 2.0f;
 	world_rt.rtParams->debugLightIndex = r_rtDebugLightIndex->integer;
 	world_rt.rtParams->rtEnable = r_rtEnable->integer;
 	

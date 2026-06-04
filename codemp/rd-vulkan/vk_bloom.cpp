@@ -76,7 +76,7 @@ qboolean vk_bloom( void )
 		// restore last pipeline
 		qvkCmdBindPipeline( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk.cmd->last_pipeline );
 
-		vk_update_mvp( NULL );
+		vk_push_constant_mvp( NULL );
 
 		// force depth range and viewport/scissor updates
 		vk.cmd->depth_range = DEPTH_RANGE_COUNT;

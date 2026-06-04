@@ -23,6 +23,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "tr_local.h"
 #include "tr_WorldEffects.h"
+#include "vk_local.h"
 
 backEndData_t	*backEndData;
 backEndState_t	backEnd;
@@ -229,7 +230,6 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	depthRange				= DEPTH_RANGE_NORMAL;
 	oldFogNum				= -1;
 	oldDlighted				= qfalse;
-	qboolean				push_constant;
 #ifdef USE_VANILLA_SHADOWFINISH
 	didShadowPass			= qfalse;
 #endif
@@ -282,11 +282,12 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		// a "entityMergable" shader is a shader that can have surfaces from seperate
 		// entities merged into a single batch, like smoke and blood puff sprites
 
-		push_constant = qfalse;
+		// A new batch starts on a shader/fog/dlight change, or a non-mergable entity
+		// change (mergable shaders -- sprites -- merge across entities deliberately).
+		const qboolean shaderChanged = qboolean( shader != oldShader || fogNum != oldFogNum || dlighted != oldDlighted );
+		const qboolean newBatch      = qboolean( shaderChanged || ( entityNum != oldEntityNum && !shader->entityMergable ) );
 
-		//if (((oldSort ^ drawSurfs->sort) & ~QSORT_REFENTITYNUM_MASK) || !shader->entityMergable) {
-		if ( shader != oldShader || fogNum != oldFogNum || dlighted != oldDlighted
-			|| ( entityNum != oldEntityNum && !shader->entityMergable ) )
+		if ( newBatch )
 		{
 			//if (oldShader != NULL) {
 				RB_EndSurface();
@@ -312,8 +313,6 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 			oldShader = shader;
 			oldFogNum = fogNum;
 			oldDlighted = dlighted;
-
-			push_constant = qtrue;
 		}
 
 		oldSort = drawSurf->sort;
@@ -321,7 +320,8 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		//
 		// change the modelview matrix if needed
 		//
-		if (entityNum != oldEntityNum)
+		const qboolean entityChanged = qboolean ( entityNum != oldEntityNum );
+		if ( entityChanged )
 		{
 			depthRange = DEPTH_RANGE_NORMAL;
 
@@ -356,13 +356,19 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 			vk_set_depthrange( depthRange );
 
-			if ( push_constant ) {
-				Com_Memcpy(vk_world.modelview_transform, backEnd.ori.modelViewMatrix, 64);
-				vk_update_mvp(NULL);
-			}
-
 			oldEntityNum = entityNum;
 		}
+		
+		if ( entityChanged && newBatch ) {
+			Com_Memcpy(vk_world.modelview_transform, backEnd.ori.modelViewMatrix, 64);
+			vk.cmd->push_dirty |= VK_PC_MVP;
+		}
+
+		if (shaderChanged) {
+			vk_world.is_emmiter = (shader->surfaceLight > 0.0f ? 1 : 0);
+			vk.cmd->push_dirty |= VK_PC_EMITTER;
+		}
+
 
 		qboolean isDistortionShader = (qboolean)
 			((shader->useDistortion == qtrue) || (backEnd.currentEntity && backEnd.currentEntity->e.renderfx & RF_DISTORTION));
@@ -389,7 +395,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	// go back to the world modelview matrix
 	Com_Memcpy(vk_world.modelview_transform, backEnd.viewParms.world.modelViewMatrix, 64);
-	//vk_update_mvp();
+	//vk_push_constant_mvp();
 	vk_set_depthrange(DEPTH_RANGE_NORMAL);
 
 #ifdef USE_VANILLA_SHADOWFINISH
@@ -526,7 +532,7 @@ static void RB_RenderLitSurfList( dlight_t *dl ) {
 			vk_set_depthrange( depthRange );
 
 			Com_Memcpy(vk_world.modelview_transform, backEnd.ori.modelViewMatrix, 64);
-			vk_update_mvp(NULL);
+			vk_push_constant_mvp(NULL);
 
 			oldEntityNum = entityNum;
 		}
@@ -544,7 +550,7 @@ static void RB_RenderLitSurfList( dlight_t *dl ) {
 
 	// go back to the world modelview matrix
 	Com_Memcpy(vk_world.modelview_transform, backEnd.viewParms.world.modelViewMatrix, 64);
-	//vk_update_mvp();
+	//vk_push_constant_mvp();
 
 	vk_set_depthrange(DEPTH_RANGE_NORMAL);
 }
