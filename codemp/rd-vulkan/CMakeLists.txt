@@ -78,6 +78,7 @@ set(MPVulkanRendererFiles
 	"${MPDir}/rd-vulkan/vk_frame.cpp"
 	"${MPDir}/rd-vulkan/vk_image.cpp"
 	"${MPDir}/rd-vulkan/vk_image_process.cpp"
+	"${MPDir}/rd-vulkan/vk_imgui_context.cpp"
 	"${MPDir}/rd-vulkan/vk_info.cpp"
 	"${MPDir}/rd-vulkan/vk_init.cpp"
 	"${MPDir}/rd-vulkan/vk_instance.cpp"
@@ -163,6 +164,16 @@ list(APPEND MPVulkanRendererLibraries          ${ZLIB_LIBRARIES})
 list(APPEND MPVulkanRendererIncludeDirectories ${MINIZIP_INCLUDE_DIRS})
 list(APPEND MPVulkanRendererLibraries          ${MINIZIP_LIBRARIES})
 
+# Bundled Dear ImGui (debug overlay). include/ on the path so vk_imgui*.cpp can
+# `#include "imgui.h"` and unity-`#include <backends/imgui_impl_*.cpp>`. The lib
+# is linked only when USE_VK_IMGUI is set AND the config is not Release, so the
+# Release renderer DLL ships with zero ImGui code (the overlay TU compiles to an
+# empty unit there too -- see the USE_VK_IMGUI define below). Include dirs stay
+# unconditional (harmless; the TU body is #ifdef'd out when the macro is unset).
+list(APPEND MPVulkanRendererIncludeDirectories ${IMGUI_INCLUDE_DIRS})
+list(APPEND MPVulkanRendererLibraries
+	$<$<AND:$<BOOL:${USE_VK_IMGUI}>,$<NOT:$<CONFIG:Release>>>:${IMGUI_LIBRARIES}>)
+
 #find_package(OpenGL REQUIRED)
 #set(MPVulkanRendererIncludeDirectories ${MPVulkanRendererIncludeDirectories} ${OPENGL_INCLUDE_DIR})
 #set(MPVulkanRendererLibraries ${MPVulkanRendererLibraries} ${OPENGL_LIBRARIES})
@@ -202,3 +213,11 @@ set_property(TARGET ${MPVulkanRenderer} APPEND PROPERTY COMPILE_OPTIONS ${OPENJK
 set_target_properties(${MPVulkanRenderer} PROPERTIES INCLUDE_DIRECTORIES "${MPVulkanRendererIncludeDirectories}")
 set_target_properties(${MPVulkanRenderer} PROPERTIES PROJECT_LABEL "MP Vulkan Renderer")
 target_link_libraries(${MPVulkanRenderer} ${MPVulkanRendererLibraries})
+
+# Define USE_VK_IMGUI for the same configs the lib is linked in (option ON and
+# not Release). The overlay TU and every engine-side call site are wrapped in
+# `#ifdef USE_VK_IMGUI`, so a Release build (or USE_VK_IMGUI=OFF) compiles them
+# all to nothing -- no symbols, no link dependency, trivial to remove later.
+# Appended after the COMPILE_DEFINITIONS set above so it adds rather than clobbers.
+target_compile_definitions(${MPVulkanRenderer} PRIVATE
+	$<$<AND:$<BOOL:${USE_VK_IMGUI}>,$<NOT:$<CONFIG:Release>>>:USE_VK_IMGUI>)

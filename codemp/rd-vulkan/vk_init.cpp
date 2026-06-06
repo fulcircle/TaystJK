@@ -605,6 +605,10 @@ void vk_initialize( void )
 	}
 
 	vk.active = qtrue;
+
+	#ifdef USE_VK_IMGUI
+		vk_imgui_initialize();
+	#endif
 }
 
 // Shutdown vulkan subsystem by releasing resources acquired by Vk_Instance.
@@ -690,6 +694,10 @@ __cleanup:
 			qvkDestroyDebugUtilsMessengerEXT(vk.instance, vk.debug_utils_messenger, NULL);
 	#endif
 #endif
+
+	#ifdef USE_VK_IMGUI
+		vk_imgui_shutdown();
+	#endif
 
 	if (vk.instance != VK_NULL_HANDLE)
 		qvkDestroyInstance(vk.instance, NULL);

@@ -933,7 +933,7 @@ void R_Register( void )
 	ri.Cvar_CheckRange(r_ext_supersample, 0, 1, qtrue);
 	r_ext_alpha_to_coverage				= ri.Cvar_Get("r_ext_alpha_to_coverage",			"0",						CVAR_ARCHIVE_ND | CVAR_LATCH, "");
 	ri.Cvar_CheckRange(r_ext_alpha_to_coverage, 0, 1, qtrue);
-	r_fbo								= ri.Cvar_Get("r_fbo",								"0",						CVAR_ARCHIVE_ND | CVAR_LATCH, "");
+	r_fbo								= ri.Cvar_Get("r_fbo",								"1",						CVAR_ARCHIVE_ND | CVAR_LATCH, "");
 	r_hdr								= ri.Cvar_Get("r_hdr",								"1",						CVAR_ARCHIVE | CVAR_LATCH, "");
 	r_mapGreyScale						= ri.Cvar_Get("r_mapGreyScale",						"0",						CVAR_ARCHIVE_ND | CVAR_LATCH, "");
 	ri.Cvar_CheckRange(r_mapGreyScale, -1, 1, qfalse);

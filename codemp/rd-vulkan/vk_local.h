@@ -1287,6 +1287,13 @@ void		vk_set_object_name( uint64_t obj, const char *objName, VkDebugReportObject
 void		vk_debug( const char *msg, ... );
 void		R_DebugGraphics( void );
 
+#ifdef USE_VK_IMGUI
+	void		vk_imgui_initialize( void );
+	void		vk_imgui_begin_frame( void );
+	void		vk_imgui_draw( void );
+	void		vk_imgui_shutdown( void );
+#endif
+
 #ifdef USE_VK_VALIDATION
 	void	vk_create_debug_callback( void );
 

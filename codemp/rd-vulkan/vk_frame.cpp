@@ -1433,6 +1433,10 @@ void vk_end_frame( void )
         }
     }
 
+    #ifdef USE_VK_IMGUI
+        vk_imgui_draw();
+    #endif
+
     vk_end_render_pass();
 
     VK_CHECK( qvkEndCommandBuffer( vk.cmd->command_buffer ) );

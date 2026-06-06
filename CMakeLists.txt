@@ -97,14 +97,6 @@ endif()
 #=============================================================================
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_SOURCE_DIR}/cmake/Modules")
 
-if(CMAKE_EXPORT_COMPILE_COMMANDS)
-	add_custom_target(
-		copy-compile-commands ALL
-		${CMAKE_COMMAND} -E copy_if_different
-		${CMAKE_BINARY_DIR}/compile_commands.json
-		${CMAKE_CURRENT_LIST_DIR})
-endif()
-
 #=============================================================================
 #
 # Architecture/OS defines
@@ -449,6 +441,15 @@ endif()
 # Always use bundled minizip (sets MINIZIP_{LIBRARIES,INCLUDE_DIR})
 add_subdirectory(lib/minizip)
 add_subdirectory(lib/cJSON)
+# Bundled Dear ImGui (sets IMGUI_{LIBRARIES,INCLUDE_DIRS}) -- must precede the
+# renderer subdir below so rd-vulkan sees these vars. Gated by USE_VK_IMGUI:
+# on by default; the option is defined here (before both the lib build and the
+# renderer subdir) so a hard OFF skips building the lib entirely. Per-config
+# auto-off in Release is handled in codemp/rd-vulkan/CMakeLists.txt.
+option(USE_VK_IMGUI "Build the Dear ImGui debug overlay (auto-off in Release)" ON)
+if(USE_VK_IMGUI)
+	add_subdirectory(lib/imgui)
+endif()
 # Add projects
 add_subdirectory(${MPDir})
 
