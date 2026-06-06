@@ -184,9 +184,6 @@ cvar_t	*r_patchStitching;
 cvar_t	*r_defaultImage;
 cvar_t	*r_device;
 
-cvar_t  *r_rtDebugLighting;
-cvar_t  *r_rtDebugLightIndex;
-cvar_t  *r_rtSurfaceLightOffset;
 cvar_t  *r_rtSurfaceLightScale;
 cvar_t  *r_rtEnable;
 //cvar_t	*r_stencilbits;
@@ -879,9 +876,6 @@ void R_Register( void )
 		" 2 - \"hardware\" fog + collapse\n"
 		" 3 - legacy fog + collapse\n");
 	r_lightmap							= ri.Cvar_Get( "r_lightmap",						"0",						CVAR_ARCHIVE_ND, "" );
-	r_rtDebugLighting					= ri.Cvar_Get( "r_rtDebugLighting",					"0",						CVAR_CHEAT, "RT lighting debug view" );
-	r_rtDebugLightIndex					= ri.Cvar_Get( "r_rtDebugLightIndex",				"-1",						CVAR_CHEAT, "RT debug: isolate one light index (-1 = all)" );
-	r_rtSurfaceLightOffset				= ri.Cvar_Get( "r_rtSurfaceLightOffset",			"16",						CVAR_CHEAT, "RT: push synthesized surface lights this far off their surface (read at map load)" );
 	r_rtSurfaceLightScale				= ri.Cvar_Get( "r_rtSurfaceLightScale",				"1e-5",						CVAR_CHEAT, "RT: scale surface light intensity (read at map load)");
 	r_rtEnable							= ri.Cvar_Get( "r_rtEnable",						"1",						CVAR_CHEAT, "RT: 1 = direct lighting on, 0 = bypass (show lightmap/fullbright)" );
 	r_distanceCull						= ri.Cvar_Get( "r_distanceCull",					"0",						CVAR_ARCHIVE_ND, "" );

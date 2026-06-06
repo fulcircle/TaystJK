@@ -149,9 +149,7 @@ layout(std430, set = 5, binding = 1) readonly buffer RtLights {
 };
 
 layout(set = 5, binding = 2) uniform RtParams {
-    uint u_LightDebugMode;
     float u_falloffScale;
-    int u_debugLightIndex; // -1 = aggregate all lights; >=0 = isolate that light
     uint u_numLights; // valid light count (binding 1 may hold a dummy element)
     uint u_rtEnable; // 0 = bypass RT direct lighting (show lightmap/fullbright)
 };

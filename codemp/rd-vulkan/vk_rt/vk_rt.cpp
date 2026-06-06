@@ -11,12 +11,10 @@
 #define MAX_LIGHT_INFOS 1000
 
 typedef struct {
-	uint32_t 					lightDebugMode;
 	float 						falloffScale;
-	int32_t						debugLightIndex;
 	uint32_t					numLights;
 	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
-	uint32_t					_pad[3];		// std140: pad block to 32 bytes
+	uint32_t					_pad[1];		// std140: pad block to 16 bytes
 } rtParams_t;
 
 typedef struct {
@@ -756,9 +754,7 @@ void R_rtUpdateParams( void ) {
 		return;
 	}
 
-	world_rt.rtParams->lightDebugMode = r_rtDebugLighting->integer;
 	world_rt.rtParams->falloffScale = 2.0f;
-	world_rt.rtParams->debugLightIndex = r_rtDebugLightIndex->integer;
 	world_rt.rtParams->rtEnable = r_rtEnable->integer;
 	
 }
