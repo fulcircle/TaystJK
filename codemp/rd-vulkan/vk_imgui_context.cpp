@@ -2,9 +2,12 @@
 
 #define VK_NO_PROTOTYPES
 
+#define SDL_MAIN_HANDLED
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.cpp"
+#include "backends/imgui_impl_sdl2.cpp"
 #include "tr_local.h"
+#include <SDL.h>
 
 static VkDescriptorPool imgui_descriptor_pool;
 
@@ -87,19 +90,44 @@ void vk_imgui_initialize( void ) {
     ImGui_ImplVulkan_Init( &init_info );
     ImGui_ImplVulkan_CreateFontsTexture();
 
+    SDL_Window* sdlWindow = SDL_GetWindowFromID(1);
+    ImGui_ImplSDL2_InitForVulkan(sdlWindow);
+
     Com_Printf( "Initialized ImGui with Vulkan backend\n" );
 }
 
 void vk_imgui_begin_frame( void ) {
+    bool imgui_enable = r_imgui->integer != 0;
+    if ( imgui_enable ){
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+    } else {
+        SDL_SetRelativeMouseMode(SDL_TRUE);
+    }
+
+    if ( imgui_enable ) {
+        SDL_Event e;
+        while ( SDL_PollEvent( &e ) ) {
+            ImGui_ImplSDL2_ProcessEvent( &e );
+
+            // If F1 is pressed, turn off the menu and return control to the game
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F1) {
+                ri.Cvar_SetValue("r_imgui", 0.0f);
+            }
+        }
+    }
 
 }
 
 void vk_imgui_draw( void ) {
+    if (r_imgui->integer == 0) {
+        return;
+    }
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2( (float)gls.windowWidth, (float)gls.windowHeight );
     io.DeltaTime = 1.0f / 60.0f;
 
     ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
     ImGui::SetNextWindowPos ( ImVec2( 0.0f, 0.0f ), ImGuiCond_Always );
@@ -107,6 +135,11 @@ void vk_imgui_draw( void ) {
 
     ImGui::Begin( "RT Debug", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse );
     ImGui::Text( "ImGui overlay online (%.0f x %.0f)", io.DisplaySize.x, io.DisplaySize.y );
+    bool rtEnabled = r_rtEnable->integer != 0;
+    if (ImGui::Checkbox("Enable RT", &rtEnabled)) {
+        ri.Cvar_SetValue("r_rtEnable", rtEnabled ? 1.0f : 0.0f);
+        ri.Cvar_SetValue("r_fullbright", rtEnabled ? 1.0f : 0.0f);
+    }
     ImGui::End();
 
     ImGui::Render();
@@ -116,6 +149,7 @@ void vk_imgui_draw( void ) {
 
 void vk_imgui_shutdown( void ) {
     ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
     qvkDestroyDescriptorPool( vk.device, imgui_descriptor_pool, NULL );
 }

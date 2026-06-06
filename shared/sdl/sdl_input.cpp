@@ -851,6 +851,12 @@ static void IN_ProcessEvents( int eventTime )
 
 	while( SDL_PollEvent( &e ) )
 	{
+		// Hardcode F1 to enable the ImGui overlay
+		if ( e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F1 ) {
+			Cvar_SetValue("r_imgui", 1.0f);
+			continue;
+		}
+
 		switch( e.type )
 		{
 			case SDL_KEYDOWN:
@@ -1201,6 +1207,12 @@ static void IN_JoyMove( int eventTime )
 void IN_Frame (void) {
 	static int	eventTime;
 	qboolean	loading;
+
+	cvar_t *r_imgui = Cvar_Get("r_imgui", "0", CVAR_ARCHIVE_ND);
+	if ( r_imgui && r_imgui->integer != 0 ) {
+		eventTime = Sys_Milliseconds( );
+		return;
+	}
 
 	IN_JoyMove( eventTime );
 

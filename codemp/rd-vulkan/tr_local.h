@@ -1981,6 +1981,9 @@ extern cvar_t	*r_vbo;
 extern cvar_t	*r_vbo_models;
 #endif
 
+// imgui
+extern cvar_t	*r_imgui;
+
 /*
 Ghoul2 Insert Start
 */

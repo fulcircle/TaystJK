@@ -220,6 +220,9 @@ cvar_t	*r_vbo;
 cvar_t	*r_vbo_models;
 #endif
 
+// imgui
+cvar_t	*r_imgui;
+
 // the limits apply to the sum of all scenes in a frame --
 // the main view, all the 3D icons, etc
 #define	DEFAULT_MAX_POLYS		32000
@@ -910,6 +913,9 @@ void R_Register( void )
 	r_patchStitching					= ri.Cvar_Get( "r_patchStitching",					"1",						CVAR_ARCHIVE, "Enable stitching of neighbouring patch surfaces" );
 	r_maxpolys							= ri.Cvar_Get( "r_maxpolys",						XSTRING( DEFAULT_MAX_POLYS ),		CVAR_NONE, "" );
 	r_maxpolyverts						= ri.Cvar_Get( "r_maxpolyverts",					XSTRING( DEFAULT_MAX_POLYVERTS ),	CVAR_NONE, "" );
+
+	// imgui
+	r_imgui							= ri.Cvar_Get( "r_imgui",							"0",						CVAR_ARCHIVE_ND, "Enable ImGui debug UI" );
 
 	// Vulkan
 	r_defaultImage						= ri.Cvar_Get("r_defaultImage",						"",							CVAR_ARCHIVE_ND | CVAR_LATCH, "");

@@ -178,6 +178,26 @@ list(APPEND MPVulkanRendererLibraries
 #set(MPVulkanRendererIncludeDirectories ${MPVulkanRendererIncludeDirectories} ${OPENGL_INCLUDE_DIR})
 #set(MPVulkanRendererLibraries ${MPVulkanRendererLibraries} ${OPENGL_LIBRARIES})
 
+# Add SDL2 dependencies to the Vulkan renderer
+if(UseInternalSDL2)
+	if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+		list(APPEND MPVulkanRendererLibraries
+			${OpenJKLibDir}/SDL2/lib/x86/SDL2main.lib
+			${OpenJKLibDir}/SDL2/lib/x86/SDL2.lib
+		)
+	else()
+		list(APPEND MPVulkanRendererLibraries
+			${OpenJKLibDir}/SDL2/lib/x64/SDL2main.x86_64.lib
+			${OpenJKLibDir}/SDL2/lib/x64/SDL2.x86_64.lib
+		)
+	endif()
+	list(APPEND MPVulkanRendererIncludeDirectories ${OpenJKLibDir}/SDL2/include)
+else()
+	find_package(SDL2 REQUIRED)
+	list(APPEND MPVulkanRendererIncludeDirectories ${SDL2_INCLUDE_DIR})
+	list(APPEND MPVulkanRendererLibraries ${SDL2_LIBRARY})
+endif()
+
 set(MPVulkanRendererIncludeDirectories ${MPVulkanRendererIncludeDirectories} ${OpenJKLibDir})
 add_library(${MPVulkanRenderer} SHARED ${MPVulkanRendererFiles})
 

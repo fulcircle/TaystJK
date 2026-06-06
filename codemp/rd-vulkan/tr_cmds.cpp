@@ -427,6 +427,10 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 		clrcmd->commandId = RC_CLEARCOLOR;
 	}
 #endif // USE_BUFFER_CLEAR
+
+	if (vk.active && !ri.VK_IsMinimized()) {
+		vk_imgui_begin_frame();
+	}
 }
 
 /*
