@@ -15,6 +15,7 @@ typedef struct {
 	float						surfaceLightScale;
 	uint32_t					numLights;
 	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
+	uint32_t					frameCount;
 } rtParams_t;
 
 typedef struct {
@@ -588,10 +589,37 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 			
 			polygon->type = LIGHT_TYPE_POLYGON;
 			VectorScale(white, surface->shader->surfaceLight, polygon->color);
+
+			vec3_t v0, v1, v2, centroid, normal;
+			VectorCopy(tess.xyz[ tess.indexes [k + 0] ], v0);
+			VectorCopy(tess.xyz[ tess.indexes [k + 1] ], v1);
+			VectorCopy(tess.xyz[ tess.indexes [k + 2] ], v2);
 			
-			VectorCopy(tess.xyz[ tess.indexes[k + 0] ], polygon->positions + 0 );
-			VectorCopy(tess.xyz[ tess.indexes[k + 1] ], polygon->positions + 3);
-			VectorCopy(tess.xyz[ tess.indexes[k + 2] ], polygon->positions + 6);
+			VectorCopy(v0, polygon->positions + 0);
+			VectorCopy(v1, polygon->positions + 3);
+			VectorCopy(v2, polygon->positions + 6);
+
+			centroid[0] = (v0[0] + v1[0] + v2[0]) / 3.0f;
+			centroid[1] = (v0[1] + v1[1] + v2[1]) / 3.0f;
+			centroid[2] = (v0[2] + v1[2] + v2[2]) / 3.0f;
+
+			// Bounding Radius
+			float dist1 = Distance(centroid, v0);
+			float dist2 = Distance(centroid, v1);
+			float dist3 = Distance(centroid, v2);
+
+			polygon->boundingRadius = MAX( MAX(dist1, dist2), dist3 );
+
+			// Area
+			vec3_t e1, e2, crossProd;
+			VectorSubtract(v1, v0, e1);
+			VectorSubtract(v2, v0, e2);
+			CrossProduct(e1, e2, crossProd);
+
+			polygon->area = 0.5f * VectorLength(crossProd);
+
+			// Normalize cross product to get the triangle normal
+			VectorNormalize2(crossProd, polygon->normal);
 		} 
 
 		tess.numVertexes = 0;
@@ -757,5 +785,6 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->rtEnable = r_rtEnable->integer;
 	world_rt.rtParams->falloffScale = r_rtFalloffScale->value;
 	world_rt.rtParams->surfaceLightScale = r_rtSurfaceLightScale->value;
+	world_rt.rtParams->frameCount = tr.frameCount;
 	
 }

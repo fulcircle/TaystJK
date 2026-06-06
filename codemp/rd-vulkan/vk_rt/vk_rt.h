@@ -17,6 +17,9 @@ typedef enum {
 typedef struct {
 	float     color[3];      // emitted radiance (white * surfaceLight for now)
 	float     positions[9];  // v0, v1, v2  (flat 3x vec3)
+	float	  normal[3];
+	float	  area;
+	float     boundingRadius;
 	lightType type;          // LIGHT_TYPE_POLYGON
 } rtLight_t;
 
