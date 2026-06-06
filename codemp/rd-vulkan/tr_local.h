@@ -1949,6 +1949,7 @@ extern cvar_t	*r_patchStitching;
 extern cvar_t	*r_defaultImage;
 extern cvar_t	*r_device;
 extern cvar_t	*r_rtSurfaceLightScale;
+extern cvar_t	*r_rtFalloffScale;
 extern cvar_t	*r_rtEnable;
 extern cvar_t	*r_ext_multisample;
 extern cvar_t	*r_ext_supersample;

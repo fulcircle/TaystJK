@@ -136,10 +136,22 @@ void vk_imgui_draw( void ) {
     ImGui::Begin( "RT Debug", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse );
     ImGui::Text( "ImGui overlay online (%.0f x %.0f)", io.DisplaySize.x, io.DisplaySize.y );
     bool rtEnabled = r_rtEnable->integer != 0;
+
     if (ImGui::Checkbox("Enable RT", &rtEnabled)) {
         ri.Cvar_SetValue("r_rtEnable", rtEnabled ? 1.0f : 0.0f);
         ri.Cvar_SetValue("r_fullbright", rtEnabled ? 1.0f : 0.0f);
     }
+
+    float falloff = r_rtFalloffScale->value;
+    if (ImGui::SliderFloat("Light Falloff", &falloff, 0.1f, 10.0f)) {
+        ri.Cvar_SetValue("r_rtFalloffScale", falloff);
+    }
+
+    float lightScale = r_rtSurfaceLightScale->value;
+    if (ImGui::SliderFloat("Surface Light Scale", &lightScale, 0.0f, 10.0f)) {
+        ri.Cvar_SetValue("r_rtSurfaceLightScale", lightScale);
+    }
+
     ImGui::End();
 
     ImGui::Render();

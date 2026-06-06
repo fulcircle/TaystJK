@@ -150,6 +150,7 @@ layout(std430, set = 5, binding = 1) readonly buffer RtLights {
 
 layout(set = 5, binding = 2) uniform RtParams {
     float u_falloffScale;
+    float u_surfaceLightScale;
     uint u_numLights; // valid light count (binding 1 may hold a dummy element)
     uint u_rtEnable; // 0 = bypass RT direct lighting (show lightmap/fullbright)
 };
@@ -741,7 +742,7 @@ void main() {
 
             float minDist = 32.0;
             float falloff = u_falloffScale / max(dist * dist, minDist * minDist);
-            vec3 lcolor = vec3(lights[i].color[0], lights[i].color[1], lights[i].color[2]);
+            vec3 lcolor = vec3(lights[i].color[0], lights[i].color[1], lights[i].color[2]) * u_surfaceLightScale;
             float contrib = max(lcolor.r, max(lcolor.g, lcolor.b)) * falloff * NdotL;
             if (contrib < 0.01)
                 continue;
