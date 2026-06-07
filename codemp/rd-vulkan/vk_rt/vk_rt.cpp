@@ -711,7 +711,7 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 			polygon->type = LIGHT_TYPE_POLYGON;
 			VectorScale(white, surface->shader->surfaceLight, polygon->color);
 
-			vec3_t v0, v1, v2, centroid, normal;
+			vec3_t v0, v1, v2, normal;
 			VectorCopy(tess.xyz[ tess.indexes [k + 0] ], v0);
 			VectorCopy(tess.xyz[ tess.indexes [k + 1] ], v1);
 			VectorCopy(tess.xyz[ tess.indexes [k + 2] ], v2);
@@ -720,14 +720,14 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 			VectorCopy(v1, polygon->positions + 3);
 			VectorCopy(v2, polygon->positions + 6);
 
-			centroid[0] = (v0[0] + v1[0] + v2[0]) / 3.0f;
-			centroid[1] = (v0[1] + v1[1] + v2[1]) / 3.0f;
-			centroid[2] = (v0[2] + v1[2] + v2[2]) / 3.0f;
+			polygon->lightCentroid[0] = (v0[0] + v1[0] + v2[0]) / 3.0f;
+			polygon->lightCentroid[1] = (v0[1] + v1[1] + v2[1]) / 3.0f;
+			polygon->lightCentroid[2] = (v0[2] + v1[2] + v2[2]) / 3.0f;
 
 			// Bounding Radius
-			float dist1 = Distance(centroid, v0);
-			float dist2 = Distance(centroid, v1);
-			float dist3 = Distance(centroid, v2);
+			float dist1 = Distance(polygon->lightCentroid, v0);
+			float dist2 = Distance(polygon->lightCentroid, v1);
+			float dist3 = Distance(polygon->lightCentroid, v2);
 
 			polygon->boundingRadius = MAX( MAX(dist1, dist2), dist3 );
 
@@ -932,14 +932,9 @@ void R_rtUpdateParams( void ) {
 		for ( int i = 0; i < (int)tr.world->numStaticLights; i++ ) {
 			rtLight_t *light = &tr.world->rtStaticLights[i];
 
-			// Compute centroid of the triangle light
-			float cx = (light->positions[0] + light->positions[3] + light->positions[6]) / 3.0f;
-			float cy = (light->positions[1] + light->positions[4] + light->positions[7]) / 3.0f;
-			float cz = (light->positions[2] + light->positions[5] + light->positions[8]) / 3.0f;
-
-			float dx = camOrigin[0] - cx;
-			float dy = camOrigin[1] - cy;
-			float dz = camOrigin[2] - cz;
+			float dx = camOrigin[0] - light->lightCentroid[0];
+			float dy = camOrigin[1] - light->lightCentroid[1];
+			float dz = camOrigin[2] - light->lightCentroid[2];
 			float dist = sqrtf( dx * dx + dy * dy + dz * dz );
 
 			if ( dist <= cullRad + light->boundingRadius ) {

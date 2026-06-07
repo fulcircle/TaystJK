@@ -13,6 +13,8 @@
 #define USE_CL1
 #endif
 
+#define MAX_PIXEL_LIGHTS 64
+
 #if defined (USE_FOG)
 layout(set = 0, binding = 0) uniform UBO {
     // light/env/material parameters:
@@ -130,6 +132,7 @@ struct RtLight {
     float color[3]; // emitted radiance (matches rtLight_t color[3])
     float positions[9]; // v0, v1, v2 (flat 3x vec3)
     float normal[3];
+    float lightCentroid[3];
     float area;
     float boundingRadius;
     uint type; // LIGHT_TYPE_POLYGON
@@ -756,66 +759,117 @@ void main() {
     float r3 = rand_next(rngState);
 
     if (u_isEmitter == 0 && rt_direct_lighting == 1 && u_rtEnable != 0u && u_numLights > 0u) {
-        int i = int(floor(r1 * (float(u_numLights))));
-        if (i >= int(u_numLights)) i = int(u_numLights) - 1;
+        float weights[MAX_PIXEL_LIGHTS];
+        uint globalIndices[MAX_PIXEL_LIGHTS];
+        uint numCandidateLights = 0;
+        vec3 totalAnalyticRadiance = vec3(0.0);
 
-        vec3 v0 = vec3(lights[i].positions[0], lights[i].positions[1], lights[i].positions[2]);
-        vec3 v1 = vec3(lights[i].positions[3], lights[i].positions[4], lights[i].positions[5]);
-        vec3 v2 = vec3(lights[i].positions[6], lights[i].positions[7], lights[i].positions[8]);
+        uint loopLimit = min(u_numLights, uint(MAX_PIXEL_LIGHTS));
 
-        // Random barycentric coordinate sample
-        float r_sqrt = sqrt(r2);
-        float u = 1.0 - r_sqrt;
-        float v = r3 * r_sqrt;
-        float w = 1.0 - u - v;
+        for (uint j = 0u; j < loopLimit; j++) {
+            vec3 centroidVal = vec3(lights[j].lightCentroid[0], lights[j].lightCentroid[1], lights[j].lightCentroid[2]);
+            vec3 toLightCentroid = centroidVal - var_WorldPos;
+            float distToCentroid = length(toLightCentroid);
 
-        vec3 light_sample = v0*u + v1*v + v2*w;
+            vec3 normalVal = vec3(lights[j].normal[0], lights[j].normal[1], lights[j].normal[2]);
+            vec3 L_rep = toLightCentroid / max(distToCentroid, 0.001);
+            float NdotL = max(dot(worldNormal, L_rep), 0.0);
 
-        vec3 toLight = light_sample - var_WorldPos;
-        float dist = length(toLight);
-        vec3 L = toLight / dist;
-        float NdotL = max(dot(worldNormal, L), 0.0);
+            if (NdotL > 0.0) {
+                float minDist = 32.0;
+                float falloff = u_falloffScale / max(distToCentroid * distToCentroid, minDist * minDist);
+                vec3 lcolor = vec3(lights[j].color[0], lights[j].color[1], lights[j].color[2]) * u_surfaceLightScale;
+                vec3 singleAnalytic = lcolor * falloff * NdotL;
+                float weight = max(singleAnalytic.r, max(singleAnalytic.g, singleAnalytic.b));
 
-        if (NdotL > 0.0) {
-            float minDist = 32.0;
-            float falloff = u_falloffScale / max(dist * dist, minDist * minDist);
-            vec3 lcolor = vec3(lights[i].color[0], lights[i].color[1], lights[i].color[2]) * u_surfaceLightScale;
-            float contrib = max(lcolor.r, max(lcolor.g, lcolor.b)) * falloff * NdotL;
-
-            if (contrib >= 0.01) {
-                float vis = traceShadow(var_WorldPos, light_sample);
-                radiance = lcolor * falloff * NdotL * vis * float(u_numLights);
+                if (weight >= 0.01) {
+                    weights[numCandidateLights] = weight;
+                    globalIndices[numCandidateLights] = j;
+                    totalAnalyticRadiance += singleAnalytic;
+                    numCandidateLights++;
+                }
             }
         }
 
-        vec4 frame_color = vec4(base.rgb * radiance, base.a);
+        // Stochastic selection via CDF
+        uint selectedGlobalIndex = 0u;
+        float selectionProb = 1.0;
+        bool hasLight = false;
+
+        if (numCandidateLights > 0) {
+            float totalWeight = 0.0;
+            for (uint c = 0u; c < numCandidateLights; c++) {
+                totalWeight += weights[c];
+            }
+
+            if (totalWeight > 0.0) {
+                float r_val = r1 * totalWeight;
+                float cumulative = 0.0;
+                for (uint c = 0u; c < numCandidateLights; c++) {
+                    cumulative += weights[c];
+                    if (r_val <= cumulative) {
+                        selectedGlobalIndex = globalIndices[c];
+                        selectionProb = weights[c] / totalWeight;
+                        hasLight = true;
+                        break;
+                    }
+                }
+                if (!hasLight) {
+                    selectedGlobalIndex = globalIndices[numCandidateLights - 1u];
+                    selectionProb = weights[numCandidateLights - 1u] / totalWeight;
+                    hasLight = true;
+                }
+            }
+        }
+
+        float vis_sample = 0.0;
+        if (hasLight) {
+            vec3 v0 = vec3(lights[selectedGlobalIndex].positions[0], lights[selectedGlobalIndex].positions[1], lights[selectedGlobalIndex].positions[2]);
+            vec3 v1 = vec3(lights[selectedGlobalIndex].positions[3], lights[selectedGlobalIndex].positions[4], lights[selectedGlobalIndex].positions[5]);
+            vec3 v2 = vec3(lights[selectedGlobalIndex].positions[6], lights[selectedGlobalIndex].positions[7], lights[selectedGlobalIndex].positions[8]);
+
+            float r_sqrt = sqrt(r2);
+            float u = 1.0 - r_sqrt;
+            float v = r3 * r_sqrt;
+            float w = 1.0 - u - v;
+
+            vec3 light_sample = v0*u + v1*v + v2*w;
+            vis_sample = traceShadow(var_WorldPos, light_sample);
+        }
+
+        vec3 unshadowed_color = base.rgb * totalAnalyticRadiance;
         vec4 prevClipPos = prevMvp * vec4(var_WorldPos, 1.0);
         vec3 prevNDC = prevClipPos.xyz / prevClipPos.w;
         vec2 prevUV = prevNDC.xy * 0.5 + 0.5;
 
+        vec3 final_visibility = vec3(vis_sample);
+        float newN = 1.0;
+
         if ( prevUV.x >= 0 && prevUV.x <= 1 &&
              prevUV.y >= 0 && prevUV.y <= 1 &&
              prevClipPos.w > 0 ) {
-                vec4 history = texture(u_historyTexture, prevUV);
-                vec3 history_color = history.rgb;
-                float historyN = history.a * u_maxHistoryN;
-                float newN = min(historyN + 1.0, u_maxHistoryN);
+            vec4 history = texture(u_historyTexture, prevUV);
+            vec3 history_color = history.rgb;
+            float historyN = history.a * u_maxHistoryN;
+            newN = min(historyN + 1.0, u_maxHistoryN);
 
-                float threshold = 0.20;
-                float alpha = (u_useDynamicNWeight != 0u) ? (1.0 / newN) : 0.15;
+            float alpha = (u_useDynamicNWeight != 0u) ? (1.0 / newN) : 0.15;
 
-                if (distance(history_color, frame_color.rgb) > threshold) {
-                    newN = 1.0;
-                    alpha = 1.0;
-                }
+            // Demodulate history to get historical visibility
+            vec3 history_visibility = clamp(history_color / max(unshadowed_color, 0.001), 0.0, 1.0);
 
-                out_color.rgb = mix(history_color, frame_color.rgb, alpha);
-                out_color.a = newN / u_maxHistoryN;
-        } else {
-            out_color.rgb = frame_color.rgb;
-            out_color.a = 1.0 / u_maxHistoryN;
+            // Disocclusion check based on visibility distance
+            float threshold = 0.20;
+            if (distance(history_visibility, vec3(vis_sample)) > threshold) {
+                newN = 1.0;
+                alpha = 1.0;
+            }
+
+            final_visibility = mix(history_visibility, vec3(vis_sample), alpha);
         }
 
+        out_color.rgb = unshadowed_color * final_visibility;
+        out_color.a = newN / u_maxHistoryN;
     }
 
     #endif
