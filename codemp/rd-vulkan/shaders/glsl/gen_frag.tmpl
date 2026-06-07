@@ -759,14 +759,11 @@ void main() {
     float r3 = rand_next(rngState);
 
     if (u_isEmitter == 0 && rt_direct_lighting == 1 && u_rtEnable != 0u && u_numLights > 0u) {
-        float weights[MAX_PIXEL_LIGHTS];
-        uint globalIndices[MAX_PIXEL_LIGHTS];
-        uint numCandidateLights = 0;
+        float totalWeight = 0.0;
         vec3 totalAnalyticRadiance = vec3(0.0);
 
-        uint loopLimit = min(u_numLights, uint(MAX_PIXEL_LIGHTS));
-
-        for (uint j = 0u; j < loopLimit; j++) {
+        // Pass 1: Compute total weight and unshadowed radiance
+        for (uint j = 0u; j < u_numLights; j++) {
             vec3 centroidVal = vec3(lights[j].lightCentroid[0], lights[j].lightCentroid[1], lights[j].lightCentroid[2]);
             vec3 toLightCentroid = centroidVal - var_WorldPos;
             float distToCentroid = length(toLightCentroid);
@@ -782,42 +779,45 @@ void main() {
                 vec3 singleAnalytic = lcolor * falloff * NdotL;
                 float weight = max(singleAnalytic.r, max(singleAnalytic.g, singleAnalytic.b));
 
-                if (weight >= 0.0001) {
-                    weights[numCandidateLights] = weight;
-                    globalIndices[numCandidateLights] = j;
+                if (weight > 0.0) {
+                    totalWeight += weight;
                     totalAnalyticRadiance += singleAnalytic;
-                    numCandidateLights++;
                 }
             }
         }
 
-        // Stochastic selection via CDF
+        // Stochastic selection via CDF (Pass 2)
         uint selectedGlobalIndex = 0u;
         float selectionProb = 1.0;
         bool hasLight = false;
 
-        if (numCandidateLights > 0) {
-            float totalWeight = 0.0;
-            for (uint c = 0u; c < numCandidateLights; c++) {
-                totalWeight += weights[c];
-            }
+        if (totalWeight > 0.0) {
+            float r_val = r1 * totalWeight;
+            float cumulative = 0.0;
 
-            if (totalWeight > 0.0) {
-                float r_val = r1 * totalWeight;
-                float cumulative = 0.0;
-                for (uint c = 0u; c < numCandidateLights; c++) {
-                    cumulative += weights[c];
-                    if (r_val <= cumulative) {
-                        selectedGlobalIndex = globalIndices[c];
-                        selectionProb = weights[c] / totalWeight;
-                        hasLight = true;
-                        break;
+            for (uint j = 0u; j < u_numLights; j++) {
+                vec3 centroidVal = vec3(lights[j].lightCentroid[0], lights[j].lightCentroid[1], lights[j].lightCentroid[2]);
+                vec3 toLightCentroid = centroidVal - var_WorldPos;
+                float distToCentroid = length(toLightCentroid);
+
+                vec3 normalVal = vec3(lights[j].normal[0], lights[j].normal[1], lights[j].normal[2]);
+                vec3 L_rep = toLightCentroid / max(distToCentroid, 0.001);
+                float NdotL = max(dot(worldNormal, L_rep), 0.0);
+
+                if (NdotL > 0.0) {
+                    float minDist = 32.0;
+                    float falloff = u_falloffScale / max(distToCentroid * distToCentroid, minDist * minDist);
+                    float weight = max(lights[j].color[0], max(lights[j].color[1], lights[j].color[2])) * u_surfaceLightScale * falloff * NdotL;
+
+                    if (weight > 0.0) {
+                        cumulative += weight;
+                        if (r_val <= cumulative) {
+                            selectedGlobalIndex = j;
+                            selectionProb = weight / totalWeight;
+                            hasLight = true;
+                            break;
+                        }
                     }
-                }
-                if (!hasLight) {
-                    selectedGlobalIndex = globalIndices[numCandidateLights - 1u];
-                    selectionProb = weights[numCandidateLights - 1u] / totalWeight;
-                    hasLight = true;
                 }
             }
         }
