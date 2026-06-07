@@ -175,37 +175,6 @@ static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsa
 }
 
 
-static void vk_rt_write_history_descriptor( VkDescriptorSet set ) {
-	VkDescriptorImageInfo desc_info = {};
-	Vk_Sampler_Def sampler_def = {};
-	VkSampler sampler;
-	VkWriteDescriptorSet desc_set = {};
-	
-	sampler_def.gl_mag_filter = GL_LINEAR;
-	sampler_def.gl_min_filter = GL_LINEAR;
-	sampler_def.address_mode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	sampler_def.noAnisotropy = qtrue;
-
-	sampler = vk_find_sampler( &sampler_def );
-
-	desc_info.imageView = tr.whiteImage->view;
-	desc_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	desc_info.sampler = sampler;
-
-	desc_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	desc_set.pNext = NULL;
-	desc_set.dstSet = set;
-	desc_set.dstBinding = 3;
-	desc_set.dstArrayElement = 0;
-	desc_set.descriptorCount = 1;
-	desc_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	desc_set.pImageInfo = &desc_info;
-	desc_set.pBufferInfo = NULL;
-	desc_set.pTexelBufferView = NULL;
-
-	qvkUpdateDescriptorSets( vk.device, 1, &desc_set, 0, NULL );
-}
-
 // Host-visible, persistently-mapped UBO for per-frame RT params (debug mode etc).
 // Created once per world load; mapped pointer kept in world_rt.rtParams,
 // destroyed in vk_rt_release_world.
@@ -217,8 +186,6 @@ static void vk_rt_create_params_buffer( void )
 
 	VK_CHECK( qvkMapMemory( vk.device, world_rt.paramsMemory, 0, VK_WHOLE_SIZE, 0, (void **)&world_rt.rtParams ) );
 
-	vk_rt_write_history_descriptor( vk.descriptor_rt );
-	vk_rt_write_history_descriptor( vk.descriptor_rt_empty );
 }
 
 static void vk_rt_build_world_blas ( void ) {

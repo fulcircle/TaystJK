@@ -160,12 +160,11 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	VkDescriptorType types[4];
+	       	VkDescriptorType types[3];
 			types[0] = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			types[2] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            types[3] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	       	vk_create_layout_bindings( 4, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
+	       	vk_create_layout_bindings( 3, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
         }
     }
 }
