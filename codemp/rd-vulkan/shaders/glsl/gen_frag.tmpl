@@ -887,6 +887,60 @@ void main() {
             }
         }
 
+        // Normalize temporal reservoir weight before spatial reuse
+        float selected_p_hat_temp = 0.0;
+        if (r.lightIndex != 0xFFFFFFFFu) {
+            selected_p_hat_temp = eval_p_hat(r.lightIndex, var_WorldPos, worldNormal);
+        }
+        r.W = (r.weightSum > 0.0 && selected_p_hat_temp > 0.0) ? (r.weightSum / (r.M * selected_p_hat_temp)) : 0.0;
+
+        // 2b. Spatial Resampling
+        Reservoir r_spatial;
+        initReservoir(r_spatial);
+
+        // First, combine the current reservoir (initial candidate + temporal) into the spatial reservoir
+        if (r.lightIndex != 0xFFFFFFFFu && r.W > 0.0) {
+            float p_hat_current = eval_p_hat(r.lightIndex, var_WorldPos, worldNormal);
+            float weight_current = p_hat_current * r.W * r.M;
+            combineReservoir(r_spatial, r.lightIndex, weight_current, r.M, rand_next(seed));
+        }
+
+        // Sample 3 neighbors within a 16-pixel radius
+        int num_spatial_samples = 3;
+        float current_depth = 1.0 / gl_FragCoord.w;
+
+        for (int i = 0; i < num_spatial_samples; i++) {
+            float r_theta = 6.2831853 * rand_next(seed);
+            float r_rad = sqrt(rand_next(seed)) * 16.0;
+            ivec2 offset = ivec2(cos(r_theta) * r_rad, sin(r_theta) * r_rad);
+
+            ivec2 neighborCoord = ivec2(gl_FragCoord.xy) + offset;
+            neighborCoord.x = clamp(neighborCoord.x, 0, int(u_width - 1u));
+            neighborCoord.y = clamp(neighborCoord.y, 0, int(u_height - 1u));
+
+            uint neighborIdx = uint(neighborCoord.y) * u_width + uint(neighborCoord.x);
+            Reservoir r_neighbor = readReservoir(neighborIdx);
+
+            if (r_neighbor.lightIndex != 0xFFFFFFFFu && r_neighbor.W > 0.0) {
+                // Check for disocclusion between current pixel and neighbor
+                vec3 normal_neighbor = unpackSnorm4x8(r_neighbor.packedNormal).xyz;
+                float depth_neighbor = r_neighbor.depth;
+
+                bool disoccluded = (abs(depth_neighbor - current_depth) / current_depth > 0.05) || (dot(normal_neighbor, worldNormal) < 0.8);
+                if (!disoccluded) {
+                    float p_hat_neighbor = eval_p_hat(r_neighbor.lightIndex, var_WorldPos, worldNormal);
+                    float weight_neighbor = p_hat_neighbor * r_neighbor.W * r_neighbor.M;
+                    combineReservoir(r_spatial, r_neighbor.lightIndex, weight_neighbor, r_neighbor.M, rand_next(seed));
+                }
+            }
+        }
+
+        if (r_spatial.M > 0u) {
+            r.lightIndex = r_spatial.lightIndex;
+            r.M = min(r_spatial.M, 30u);
+            r.weightSum = r_spatial.weightSum * (float(r.M) / float(r_spatial.M));
+        }
+
         // 3. Weight Normalization
         float selected_p_hat = 0.0;
         if (r.lightIndex != 0xFFFFFFFFu) {
