@@ -60,6 +60,11 @@ typedef struct {
 	VkDeviceMemory			   paramsMemory;
 	rtParams_t				   *rtParams;
 
+	// ReSTIR
+	VkBuffer				   reservoirBuffers[2];
+	VkDeviceMemory			   reservoirMemory[2];
+	uint32_t				   currentReservoirWriteIndex;
+
 } world_rt_t;
 
 static world_rt_t world_rt;
@@ -178,6 +183,16 @@ static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsa
 // Host-visible, persistently-mapped UBO for per-frame RT params (debug mode etc).
 // Created once per world load; mapped pointer kept in world_rt.rtParams,
 // destroyed in vk_rt_release_world.
+static void vk_rt_create_reservoir_buffers( void ) {
+	VkDeviceSize size = (VkDeviceSize)glConfig.vidWidth * glConfig.vidHeight * 16;
+	for ( int i = 0; i < 2; i++ ) {
+		vk_rt_create_buffer( size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qfalse,
+			&world_rt.reservoirBuffers[i], &world_rt.reservoirMemory[i] );
+	}
+	world_rt.currentReservoirWriteIndex = 0;
+}
+
 static void vk_rt_create_params_buffer( void )
 {
 	vk_rt_create_buffer( sizeof( rtParams_t ), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -186,6 +201,7 @@ static void vk_rt_create_params_buffer( void )
 
 	VK_CHECK( qvkMapMemory( vk.device, world_rt.paramsMemory, 0, VK_WHOLE_SIZE, 0, (void **)&world_rt.rtParams ) );
 
+	vk_rt_create_reservoir_buffers();
 }
 
 static void vk_rt_build_world_blas ( void ) {
@@ -552,6 +568,13 @@ void vk_rt_release_world( void )
 	if ( world_rt.paramsBuffer ) {
 		qvkDestroyBuffer( vk.device, world_rt.paramsBuffer, NULL );
 		qvkFreeMemory( vk.device, world_rt.paramsMemory, NULL );
+	}
+
+	for ( int i = 0; i < 2; i++ ) {
+		if ( world_rt.reservoirBuffers[i] ) {
+			qvkDestroyBuffer( vk.device, world_rt.reservoirBuffers[i], NULL );
+			qvkFreeMemory( vk.device, world_rt.reservoirMemory[i], NULL );
+		}
 	}
 
 	prevFrameCount = 0;
