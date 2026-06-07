@@ -175,8 +175,8 @@ layout(set = 5, binding = 2) uniform RtParams {
 };
 
 struct Reservoir {
-    uint  lightIndex;
-    uint  M;
+    uint  lightIndex_M;   // packed: 16 bits lightIndex, 16 bits M
+    uint  packedSampleUV; // packed: half2x16 sampleUV
     float weightSum;
     float W;
     uint  packedNormal;
@@ -191,7 +191,20 @@ layout(std430, set = 5, binding = 4) buffer ReservoirBuf1 {
     Reservoir reservoirs1[];
 };
 
+struct LocalReservoir {
+    uint  lightIndex;
+    uint  M;
+    vec2  sampleUV;
+    float weightSum;
+    float W;
+    uint  packedNormal;
+    float depth;
+};
+
 float eval_p_hat(uint lightIndex, vec3 pos, vec3 normal) {
+    if (lightIndex == 0xFFFFFFFFu || lightIndex >= u_numLights) {
+        return 0.0;
+    }
     vec3 toLight = vec3(lights[lightIndex].lightCentroid[0], lights[lightIndex].lightCentroid[1], lights[lightIndex].lightCentroid[2]) - pos;
     float distSq = dot(toLight, toLight);
     float dist = sqrt(distSq);
@@ -205,44 +218,54 @@ layout(push_constant) uniform EmitterPC {
     layout(offset = 64) int u_isEmitter;
 };
 
-void initReservoir(out Reservoir r) {
+void initReservoir(out LocalReservoir r) {
     r.lightIndex = 0xFFFFFFFFu; // Invalid light ID
     r.M = 0u;
     r.weightSum = 0.0;
     r.W = 0.0;
     r.packedNormal = 0u;
     r.depth = 0.0;
+    r.sampleUV = vec2(0.0);
 }
 
-bool updateReservoir(inout Reservoir r, uint lightIndex, float weight, float p_hat, float randVal) {
+bool updateReservoir(inout LocalReservoir r, uint lightIndex, float weight, float p_hat, float randVal, vec2 sampleUV) {
     r.weightSum += weight;
     r.M += 1u;
     float selectionProbability = (r.weightSum > 0.0) ? (weight / r.weightSum) : 0.0;
     if (randVal < selectionProbability) {
         r.lightIndex = lightIndex;
-        // Note: p_hat is stored/evaluated for the selected candidate
+        r.sampleUV = sampleUV;
         return true;
     }
     return false;
 }
 
-bool combineReservoir(inout Reservoir r, uint lightIndex, float weight, uint M_new, float randVal) {
+bool combineReservoir(inout LocalReservoir r, uint lightIndex, float weight, uint M_new, float randVal, vec2 sampleUV) {
     r.weightSum += weight;
     r.M += M_new;
     float selectionProbability = (r.weightSum > 0.0) ? (weight / r.weightSum) : 0.0;
     if (randVal < selectionProbability) {
         r.lightIndex = lightIndex;
+        r.sampleUV = sampleUV;
         return true;
     }
     return false;
 }
 
 uint getPixelIndex() {
-    // Calculate flat 1D screen index
     return uint(gl_FragCoord.y) * u_width + uint(gl_FragCoord.x);
 }
 
-void writeReservoir(uint pixelIdx, Reservoir r) {
+void writeReservoir(uint pixelIdx, LocalReservoir lr) {
+    Reservoir r;
+    uint lightIdxClamped = (lr.lightIndex == 0xFFFFFFFFu) ? 0xFFFFu : (lr.lightIndex & 0xFFFFu);
+    r.lightIndex_M = lightIdxClamped | (lr.M << 16u);
+    r.packedSampleUV = packHalf2x16(lr.sampleUV);
+    r.weightSum = lr.weightSum;
+    r.W = lr.W;
+    r.packedNormal = lr.packedNormal;
+    r.depth = lr.depth;
+
     if (u_writeIndex == 0u) {
         reservoirs0[pixelIdx] = r;
     } else {
@@ -250,12 +273,24 @@ void writeReservoir(uint pixelIdx, Reservoir r) {
     }
 }
 
-Reservoir readReservoir(uint pixelIdx) {
+LocalReservoir readReservoir(uint pixelIdx) {
+    Reservoir r;
     if (u_readIndex == 0u) {
-        return reservoirs0[pixelIdx];
+        r = reservoirs0[pixelIdx];
     } else {
-        return reservoirs1[pixelIdx];
+        r = reservoirs1[pixelIdx];
     }
+    
+    LocalReservoir lr;
+    uint y = r.lightIndex_M & 0xFFFFu;
+    lr.lightIndex = (y == 0xFFFFu) ? 0xFFFFFFFFu : y;
+    lr.M = r.lightIndex_M >> 16u;
+    lr.sampleUV = clamp(unpackHalf2x16(r.packedSampleUV), 0.0, 1.0);
+    lr.weightSum = r.weightSum;
+    lr.W = r.W;
+    lr.packedNormal = r.packedNormal;
+    lr.depth = r.depth;
+    return lr;
 }
 
 // Trace a shadow ray from worldPos toward lightPos against the world TLAS.
@@ -845,16 +880,17 @@ void main() {
         int num_random_lights = 3;
         float q = 1.0 / u_numLights;
 
-        Reservoir r;
+        LocalReservoir r;
         initReservoir(r);
 
         // 1. Initial Candidate Resampling (RIS)
         for (int i = 0; i < 3; i++) {
             float rand = rand_next(seed);
             uint rand_index = uint(floor(rand * u_numLights));
+            vec2 sampleUV = vec2(rand_next(seed), rand_next(seed));
             float p_hat = eval_p_hat(rand_index, var_WorldPos, worldNormal);
             float weight = p_hat * u_numLights;
-            updateReservoir(r, rand_index, weight, p_hat, rand_next(seed));
+            updateReservoir(r, rand_index, weight, p_hat, rand_next(seed), sampleUV);
         }
 
         // 2. Temporal Reprojection & Reuse
@@ -867,7 +903,7 @@ void main() {
             uint prevPixelY = min(uint(prevUV.y * u_height), u_height - 1u);
             uint prevPixelIndex = prevPixelY * u_width + prevPixelX;
 
-            Reservoir r_prev = readReservoir(prevPixelIndex);
+            LocalReservoir r_prev = readReservoir(prevPixelIndex);
             if (r_prev.lightIndex != 0xFFFFFFFFu && r_prev.W > 0.0) {
                 // Unpack geometry and check for disocclusion
                 vec3 normal_prev = unpackSnorm4x8(r_prev.packedNormal).xyz;
@@ -882,7 +918,7 @@ void main() {
                     
                     float p_hat_prev = eval_p_hat(r_prev.lightIndex, var_WorldPos, worldNormal);
                     float weight = p_hat_prev * r_prev.W * r_prev.M;
-                    combineReservoir(r, r_prev.lightIndex, weight, r_prev.M, rand_next(seed));
+                    combineReservoir(r, r_prev.lightIndex, weight, r_prev.M, rand_next(seed), r_prev.sampleUV);
                 }
             }
         }
@@ -895,14 +931,14 @@ void main() {
         r.W = (r.weightSum > 0.0 && selected_p_hat_temp > 0.0) ? (r.weightSum / (r.M * selected_p_hat_temp)) : 0.0;
 
         // 2b. Spatial Resampling
-        Reservoir r_spatial;
+        LocalReservoir r_spatial;
         initReservoir(r_spatial);
 
         // First, combine the current reservoir (initial candidate + temporal) into the spatial reservoir
         if (r.lightIndex != 0xFFFFFFFFu && r.W > 0.0) {
             float p_hat_current = eval_p_hat(r.lightIndex, var_WorldPos, worldNormal);
             float weight_current = p_hat_current * r.W * r.M;
-            combineReservoir(r_spatial, r.lightIndex, weight_current, r.M, rand_next(seed));
+            combineReservoir(r_spatial, r.lightIndex, weight_current, r.M, rand_next(seed), r.sampleUV);
         }
 
         // Sample 3 neighbors within a 16-pixel radius
@@ -919,7 +955,7 @@ void main() {
             neighborCoord.y = clamp(neighborCoord.y, 0, int(u_height - 1u));
 
             uint neighborIdx = uint(neighborCoord.y) * u_width + uint(neighborCoord.x);
-            Reservoir r_neighbor = readReservoir(neighborIdx);
+            LocalReservoir r_neighbor = readReservoir(neighborIdx);
 
             if (r_neighbor.lightIndex != 0xFFFFFFFFu && r_neighbor.W > 0.0) {
                 // Check for disocclusion between current pixel and neighbor
@@ -930,7 +966,7 @@ void main() {
                 if (!disoccluded) {
                     float p_hat_neighbor = eval_p_hat(r_neighbor.lightIndex, var_WorldPos, worldNormal);
                     float weight_neighbor = p_hat_neighbor * r_neighbor.W * r_neighbor.M;
-                    combineReservoir(r_spatial, r_neighbor.lightIndex, weight_neighbor, r_neighbor.M, rand_next(seed));
+                    combineReservoir(r_spatial, r_neighbor.lightIndex, weight_neighbor, r_neighbor.M, rand_next(seed), r_neighbor.sampleUV);
                 }
             }
         }
@@ -939,6 +975,7 @@ void main() {
             r.lightIndex = r_spatial.lightIndex;
             r.M = min(r_spatial.M, 30u);
             r.weightSum = r_spatial.weightSum * (float(r.M) / float(r_spatial.M));
+            r.sampleUV = r_spatial.sampleUV;
         }
 
         // 3. Weight Normalization
@@ -952,7 +989,7 @@ void main() {
         float vis = 0.0;
         vec3 unshadowed_radiance = vec3(0.0);
 
-        if (r.lightIndex != 0xFFFFFFFFu && r.W > 0.0) {
+        if (r.lightIndex != 0xFFFFFFFFu && r.lightIndex < u_numLights && r.W > 0.0) {
             uint idx = r.lightIndex;
 
             // Fetch vertices
@@ -960,10 +997,10 @@ void main() {
             vec3 v1 = vec3(lights[idx].positions[3], lights[idx].positions[4], lights[idx].positions[5]);
             vec3 v2 = vec3(lights[idx].positions[6], lights[idx].positions[7], lights[idx].positions[8]);
 
-            // Random barycentric coordinates on the triangle
-            float r_sqrt = sqrt(rand_next(seed));
+            // Reconstruct coordinates from the reservoir sampleUV
+            float r_sqrt = sqrt(r.sampleUV.x);
             float u = 1.0 - r_sqrt;
-            float v = rand_next(seed) * r_sqrt;
+            float v = r.sampleUV.y * r_sqrt;
             float w = 1.0 - u - v;
             vec3 lightSamplePos = v0 * u + v1 * v + v2 * w;
 
