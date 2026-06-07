@@ -117,7 +117,7 @@ void vk_create_descriptor_layout( void )
         uint32_t poolCount = 3;
 
         pool_size[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        pool_size[0].descriptorCount = MAX_DRAWIMAGES + 1 + 1 + 1 + ( VK_NUM_BLUR_PASSES * 4 ) + 1;
+        pool_size[0].descriptorCount = MAX_DRAWIMAGES + 1 + 1 + 1 + ( VK_NUM_BLUR_PASSES * 4 ) + 1 + 2;
 
         pool_size[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         pool_size[1].descriptorCount = VK_DESC_UNIFORM_COUNT * NUM_COMMAND_BUFFERS;
@@ -160,11 +160,12 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	VkDescriptorType types[3];
+	       	VkDescriptorType types[4];
 			types[0] = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			types[2] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	       	vk_create_layout_bindings( 3, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
+            types[3] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	       	vk_create_layout_bindings( 4, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
         }
     }
 }

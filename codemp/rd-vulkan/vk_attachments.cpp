@@ -25,6 +25,9 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_local.h"
 
 typedef struct vk_attach_desc_s {
+    VkImage                 historyImage;
+    VkImageView             historyImageView;
+    VkDeviceMemory          historyImageMemory;
     VkImage                 descriptor;
     VkImageView             *image_view;
     VkImageUsageFlags       usage;

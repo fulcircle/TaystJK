@@ -26,5 +26,3 @@ set outf=+spirv\shader_data.c
 set outfb=+spirv\shader_binding.c
 
 "%bh%" "%glsl%" "%glslang%" "%outf%" "%outfb%"
-
-pause

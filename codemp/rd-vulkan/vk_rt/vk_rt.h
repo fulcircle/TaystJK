@@ -23,4 +23,6 @@ typedef struct {
 	lightType type;          // LIGHT_TYPE_POLYGON
 } rtLight_t;
 
+void R_rtCopyFrameToHistory( void );
+
 #endif // VK_RT_H
