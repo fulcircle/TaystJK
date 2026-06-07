@@ -57,6 +57,7 @@ typedef struct {
 	VkBuffer 				   lightBuffer;
 	VkDeviceMemory             lightMemory;
 	uint32_t				   numLights;
+	rtLight_t				   *mappedLights;
 
 	// Lighting Params
 	VkBuffer				   paramsBuffer;
@@ -759,30 +760,32 @@ static void R_rtSynthesizeSurfaceLights( world_t &worldData ) {
 }
 
 static void R_rtBuildWorldLightBuffers( rtLight_t *staticLights, uint32_t numLights ) {
-	rtLight_t  dummyLight = {};
-	rtLight_t *lights;
 	if (!vk.rayQuery) return;
-	if (numLights == 0) {
-		// Bind one zeroed dummy light so binding 1 is always a valid descriptor.
-		// The shader loops on u_numLights (0 here), so the dummy is never read.
-		world_rt.numLights = 0;
-		numLights = 1;
-		lights = &dummyLight;
+
+	// Create a host-visible dynamic buffer of MAX_RT_LIGHTS size
+	vk_rt_create_buffer( MAX_RT_LIGHTS * sizeof(rtLight_t),
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		qfalse, &world_rt.lightBuffer, &world_rt.lightMemory );
+
+	VK_CHECK( qvkMapMemory( vk.device, world_rt.lightMemory, 0, VK_WHOLE_SIZE, 0, (void **)&world_rt.mappedLights ) );
+
+	// Initialize the buffer with the initial static lights
+	world_rt.numLights = numLights;
+	if ( numLights > 0 ) {
+		uint32_t uploadCount = (numLights < MAX_RT_LIGHTS ? numLights : MAX_RT_LIGHTS);
+		Com_Memcpy( world_rt.mappedLights, staticLights, uploadCount * sizeof(rtLight_t) );
 	} else {
-		world_rt.numLights = numLights;
-		lights = staticLights;
+		// Zero the first light to keep it valid
+		Com_Memset( world_rt.mappedLights, 0, sizeof(rtLight_t) );
 	}
 
 	if (world_rt.rtParams) world_rt.rtParams->numLights = world_rt.numLights;
 
-	VkDeviceSize size = numLights * sizeof(rtLight_t);
-	vk_rt_upload_buffer(size, lights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightBuffer, &world_rt.lightMemory);
-
-	ri.Printf( PRINT_ALL, "..RT lights uploaded: %u\n", numLights);
+	ri.Printf( PRINT_ALL, "..RT lights buffer created (size: %u KB)\n", (unsigned)(MAX_RT_LIGHTS * sizeof(rtLight_t) / 1024));
 
 	vk_rt_write_light_descriptor( vk.descriptor_rt );
 	vk_rt_write_light_descriptor(vk.descriptor_rt_empty);
-
 }
 
 void R_rtBuildWorldLights( world_t &worldData ) {
@@ -917,10 +920,45 @@ void R_rtUpdateParams( void ) {
 		prevMvpValid = qtrue;
 	}
 
+	// CPU culling of static lights based on camera distance
+	int activeCount = 0;
+	if ( tr.world && tr.world->numStaticLights > 0 && world_rt.mappedLights != NULL ) {
+		vec3_t camOrigin;
+		VectorCopy( backEnd.viewParms.ori.origin, camOrigin );
+		float cullRad = r_rtLightCullRadius->value;
+
+		for ( int i = 0; i < (int)tr.world->numStaticLights; i++ ) {
+			rtLight_t *light = &tr.world->rtStaticLights[i];
+
+			// Compute centroid of the triangle light
+			float cx = (light->positions[0] + light->positions[3] + light->positions[6]) / 3.0f;
+			float cy = (light->positions[1] + light->positions[4] + light->positions[7]) / 3.0f;
+			float cz = (light->positions[2] + light->positions[5] + light->positions[8]) / 3.0f;
+
+			float dx = camOrigin[0] - cx;
+			float dy = camOrigin[1] - cy;
+			float dz = camOrigin[2] - cz;
+			float dist = sqrtf( dx * dx + dy * dy + dz * dz );
+
+			if ( dist <= cullRad + light->boundingRadius ) {
+				Com_Memcpy( &world_rt.mappedLights[activeCount], light, sizeof(rtLight_t) );
+				activeCount++;
+				if ( activeCount >= MAX_RT_LIGHTS ) {
+					break;
+				}
+			}
+		}
+
+		if ( activeCount == 0 ) {
+			Com_Memset( world_rt.mappedLights, 0, sizeof(rtLight_t) );
+		}
+	}
+
 	world_rt.rtParams->rtEnable = r_rtEnable->integer;
 	world_rt.rtParams->falloffScale = r_rtFalloffScale->value;
 	world_rt.rtParams->surfaceLightScale = r_rtSurfaceLightScale->value;
 	world_rt.rtParams->frameCount = tr.frameCount;
+	world_rt.rtParams->numLights = activeCount;
 	Com_Memcpy(world_rt.rtParams->prevMvp, prevMvp, sizeof(float)*16);
 
 	if (tr.frameCount == 0 || prevFrameCount < tr.frameCount) {
