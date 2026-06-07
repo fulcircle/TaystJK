@@ -928,6 +928,7 @@ void R_rtUpdateParams( void ) {
 		vec3_t camOrigin;
 		VectorCopy( backEnd.viewParms.ori.origin, camOrigin );
 		float cullRad = r_rtLightCullRadius->value;
+		qboolean bypassCull = (cullRad <= 0.0f) ? qtrue : qfalse;
 
 		struct CulledLight {
 			rtLight_t* light;
@@ -944,7 +945,7 @@ void R_rtUpdateParams( void ) {
 			float dz = camOrigin[2] - light->lightCentroid[2];
 			float dist = sqrtf( dx * dx + dy * dy + dz * dz );
 
-			if ( dist <= cullRad + light->boundingRadius ) {
+			if ( bypassCull || dist <= cullRad + light->boundingRadius ) {
 				culled[culledCount].light = light;
 				culled[culledCount].dist = dist;
 				culledCount++;
