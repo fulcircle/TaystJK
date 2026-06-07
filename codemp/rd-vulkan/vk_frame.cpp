@@ -1262,7 +1262,6 @@ void vk_end_render_pass( void )
 {
     qvkCmdEndRenderPass(vk.cmd->command_buffer);
     if ( vk.renderPassIndex == RENDER_PASS_MAIN && vk.fboActive == qtrue ) {
-        R_rtCopyFrameToHistory();
     }
 }
 

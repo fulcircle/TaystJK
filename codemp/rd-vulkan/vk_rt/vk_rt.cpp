@@ -22,7 +22,6 @@ typedef struct {
 	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
 	uint32_t					frameCount;
 	uint32_t					useDynamicNWeight;
-	float						maxHistoryN;
 	uint32_t					padding;
 } rtParams_t;
 
@@ -33,11 +32,6 @@ typedef struct {
 	VkDeviceMemory indexMemory;
 	uint32_t       numVertices;
 	uint32_t       numIndices;
-
-	// History
-	VkImage                    historyImage;
-	VkImageView                historyImageView;
-	VkDeviceMemory			   historyImageMemory;
 
 	// BLAS
 	VkBuffer                   asBuffer;
@@ -180,64 +174,6 @@ static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsa
 	qvkFreeMemory( vk.device, stagingMem, NULL );
 }
 
-static void vk_rt_create_history_image( uint32_t width, uint32_t height )  {
-	VkImageCreateInfo create_info = {};
-	VkMemoryAllocateInfo alloc_info = {};
-	VkMemoryRequirements mem_reqs;
-	VkCommandBuffer cmd;
-
-	// 1. Create the image
-	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	create_info.imageType = VK_IMAGE_TYPE_2D;
-	create_info.format = vk.color_format;
-	create_info.extent.width = width;
-	create_info.extent.height = height;
-	create_info.extent.depth = 1;
-	create_info.mipLevels = 1;
-	create_info.arrayLayers = 1;
-	create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-	create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-	create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-	create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-	VK_CHECK( qvkCreateImage( vk.device, &create_info, NULL, &world_rt.historyImage ) );
-
-	// 2. Allocate and bind memory
-	qvkGetImageMemoryRequirements( vk.device, world_rt.historyImage, &mem_reqs );
-
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.pNext = NULL;
-	alloc_info.allocationSize = mem_reqs.size;
-	alloc_info.memoryTypeIndex = vk_find_memory_type( mem_reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
-	
-	VK_CHECK( qvkAllocateMemory( vk.device, &alloc_info, NULL, &world_rt.historyImageMemory ) );
-	qvkBindImageMemory( vk.device, world_rt.historyImage, world_rt.historyImageMemory, 0 );
-
-	// 3. Create the image view
-	VkImageViewCreateInfo view_desc = {};
-	view_desc.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view_desc.image = world_rt.historyImage;
-	view_desc.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view_desc.format = vk.color_format;
-	view_desc.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-	view_desc.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-	view_desc.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-	view_desc.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-	view_desc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	view_desc.subresourceRange.baseMipLevel = 0;
-	view_desc.subresourceRange.levelCount = 1;
-	view_desc.subresourceRange.baseArrayLayer = 0;
-	view_desc.subresourceRange.layerCount = 1;
-
-	VK_CHECK( qvkCreateImageView( vk.device, &view_desc, NULL, &world_rt.historyImageView ) );
-
-	// 4. Transition layout to shader-read
-	cmd = vk_begin_command_buffer();
-	vk_record_image_layout_transition( cmd, world_rt.historyImage, VK_IMAGE_ASPECT_COLOR_BIT, 
-		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0, 0 );
-	vk_end_command_buffer( cmd, "end_history_image" );
-}
 
 static void vk_rt_write_history_descriptor( VkDescriptorSet set ) {
 	VkDescriptorImageInfo desc_info = {};
@@ -252,7 +188,7 @@ static void vk_rt_write_history_descriptor( VkDescriptorSet set ) {
 
 	sampler = vk_find_sampler( &sampler_def );
 
-	desc_info.imageView = world_rt.historyImageView;
+	desc_info.imageView = tr.whiteImage->view;
 	desc_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	desc_info.sampler = sampler;
 
@@ -280,8 +216,6 @@ static void vk_rt_create_params_buffer( void )
 		qfalse, &world_rt.paramsBuffer, &world_rt.paramsMemory );
 
 	VK_CHECK( qvkMapMemory( vk.device, world_rt.paramsMemory, 0, VK_WHOLE_SIZE, 0, (void **)&world_rt.rtParams ) );
-
-	vk_rt_create_history_image( glConfig.vidWidth, glConfig.vidHeight );
 
 	vk_rt_write_history_descriptor( vk.descriptor_rt );
 	vk_rt_write_history_descriptor( vk.descriptor_rt_empty );
@@ -653,14 +587,6 @@ void vk_rt_release_world( void )
 		qvkFreeMemory( vk.device, world_rt.paramsMemory, NULL );
 	}
 
-	if ( world_rt.historyImageView != NULL ) {
-		qvkDestroyImageView( vk.device, world_rt.historyImageView, NULL );
-	}
-	if ( world_rt.historyImage != NULL ) {
-		qvkDestroyImage( vk.device, world_rt.historyImage, NULL );
-		qvkFreeMemory( vk.device, world_rt.historyImageMemory, NULL );
-	}
-
 	prevFrameCount = 0;
 	prevMvpValid = qfalse;
 	Com_Memset( prevMvp, 0, sizeof(prevMvp) );
@@ -977,61 +903,12 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->frameCount = tr.frameCount;
 	world_rt.rtParams->numLights = activeCount;
 	world_rt.rtParams->useDynamicNWeight = r_rtUseDynamicNWeight->integer;
-	world_rt.rtParams->maxHistoryN = r_rtMaxHistoryN->value;
 	Com_Memcpy(world_rt.rtParams->prevMvp, prevMvp, sizeof(float)*16);
 
 	if (tr.frameCount == 0 || prevFrameCount < tr.frameCount) {
 		Com_Memcpy(prevMvp, mvp, sizeof(float)*16);
 		prevFrameCount = tr.frameCount;
 	}
-}
-
-void R_rtCopyFrameToHistory( void ) {
-	if ( !vk.rayQuery || world_rt.historyImage == VK_NULL_HANDLE || vk.color_image == VK_NULL_HANDLE || vk.cmd == NULL ) {
-		return;
-	}
-
-	VkCommandBuffer cmd = vk.cmd->command_buffer;
-
-	// 1. Transition color image to transfer src layout
-	vk_record_image_layout_transition( cmd, vk.color_image, VK_IMAGE_ASPECT_COLOR_BIT,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 0, 0 );
-
-	// 2. Transition history image to transfer dst layout
-	vk_record_image_layout_transition( cmd, world_rt.historyImage, VK_IMAGE_ASPECT_COLOR_BIT,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, 0 );
-
-	// 3. Setup copy region
-	VkImageCopy region = {};
-	region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.srcSubresource.mipLevel = 0;
-	region.srcSubresource.baseArrayLayer = 0;
-	region.srcSubresource.layerCount = 1;
-	region.srcOffset = { 0, 0, 0 };
-
-	region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.dstSubresource.mipLevel = 0;
-	region.dstSubresource.baseArrayLayer = 0;
-	region.dstSubresource.layerCount = 1;
-	region.dstOffset = { 0, 0, 0 };
-
-	region.extent.width = glConfig.vidWidth;
-	region.extent.height = glConfig.vidHeight;
-	region.extent.depth = 1;
-
-	// 4. Record copy command
-	qvkCmdCopyImage( cmd,
-		vk.color_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		world_rt.historyImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		1, &region );
-
-	// 5. Transition color image back to shader read layout
-	vk_record_image_layout_transition( cmd, vk.color_image, VK_IMAGE_ASPECT_COLOR_BIT,
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0, 0 );
-
-	// 6. Transition history image back to shader read layout
-	vk_record_image_layout_transition( cmd, world_rt.historyImage, VK_IMAGE_ASPECT_COLOR_BIT,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0, 0 );
 }
 
 uint32_t R_rtGetActiveLightCount( void ) {
