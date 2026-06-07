@@ -218,6 +218,17 @@ bool updateReservoir(inout Reservoir r, uint lightIndex, float weight, float p_h
     return false;
 }
 
+bool combineReservoir(inout Reservoir r, uint lightIndex, float weight, uint M_new, float randVal) {
+    r.weightSum += weight;
+    r.M += M_new;
+    float selectionProbability = (r.weightSum > 0.0) ? (weight / r.weightSum) : 0.0;
+    if (randVal < selectionProbability) {
+        r.lightIndex = lightIndex;
+        return true;
+    }
+    return false;
+}
+
 uint getPixelIndex() {
     // Calculate flat 1D screen index
     return uint(gl_FragCoord.y) * u_width + uint(gl_FragCoord.x);
@@ -826,14 +837,81 @@ void main() {
         int num_random_lights = 3;
         float q = 1.0 / u_numLights;
 
-        for (int i = 0; i < 3; i++) {
-            float r = rand_next(seed);
-            uint rand_index = uint(floor(r * u_numLights));
-            float p_hat = eval_p_hat(rand_index, var_WorldPos, worldNormal);
-        }
-
         Reservoir r;
         initReservoir(r);
+
+        // 1. Initial Candidate Resampling (RIS)
+        for (int i = 0; i < 3; i++) {
+            float rand = rand_next(seed);
+            uint rand_index = uint(floor(rand * u_numLights));
+            float p_hat = eval_p_hat(rand_index, var_WorldPos, worldNormal);
+            float weight = p_hat * u_numLights;
+            updateReservoir(r, rand_index, weight, p_hat, rand_next(seed));
+        }
+
+        // 2. Temporal Reprojection & Reuse
+        vec4 prevClipPos = prevMvp * vec4(var_WorldPos, 1.0);
+        vec3 prevNDC = prevClipPos.xyz / prevClipPos.w;
+        vec2 prevUV = prevNDC.xy * 0.5 + 0.5;
+
+        if (prevUV.x >= 0.0 && prevUV.x <= 1.0 && prevUV.y >= 0.0 && prevUV.y <= 1.0 && prevClipPos.w > 0.0) {
+            uint prevPixelX = uint(prevUV.x * u_width);
+            uint prevPixelY = uint(prevUV.y * u_height);
+            uint prevPixelIndex = prevPixelY * u_width + prevPixelX;
+
+            Reservoir r_prev = readReservoir(prevPixelIndex);
+            if (r_prev.lightIndex != 0xFFFFFFFFu && r_prev.W > 0.0) {
+                // Clamp history count to allow dynamic lighting/geometry updates to converge
+                r_prev.M = min(r_prev.M, 30u);
+                
+                float p_hat_prev = eval_p_hat(r_prev.lightIndex, var_WorldPos, worldNormal);
+                float weight = p_hat_prev * r_prev.W * r_prev.M;
+                combineReservoir(r, r_prev.lightIndex, weight, r_prev.M, rand_next(seed));
+            }
+        }
+
+        // 3. Weight Normalization
+        float selected_p_hat = 0.0;
+        if (r.lightIndex != 0xFFFFFFFFu) {
+            selected_p_hat = eval_p_hat(r.lightIndex, var_WorldPos, worldNormal);
+        }
+        r.W = (r.weightSum > 0.0 && selected_p_hat > 0.0) ? (r.weightSum / (r.M * selected_p_hat)) : 0.0;
+
+        // 4. Shading & Ray Tracing
+        float vis = 0.0;
+        vec3 unshadowed_radiance = vec3(0.0);
+
+        if (r.lightIndex != 0xFFFFFFFFu && r.W > 0.0) {
+            uint idx = r.lightIndex;
+
+            // Fetch vertices
+            vec3 v0 = vec3(lights[idx].positions[0], lights[idx].positions[1], lights[idx].positions[2]);
+            vec3 v1 = vec3(lights[idx].positions[3], lights[idx].positions[4], lights[idx].positions[5]);
+            vec3 v2 = vec3(lights[idx].positions[6], lights[idx].positions[7], lights[idx].positions[8]);
+
+            // Random barycentric coordinates on the triangle
+            float r_sqrt = sqrt(rand_next(seed));
+            float u = 1.0 - r_sqrt;
+            float v = rand_next(seed) * r_sqrt;
+            float w = 1.0 - u - v;
+            vec3 lightSamplePos = v0 * u + v1 * v + v2 * w;
+
+            // Evaluate unshadowed radiance contribution
+            vec3 toLight = lightSamplePos - var_WorldPos;
+            float dist = length(toLight);
+            float NdotL = max(dot(worldNormal, toLight / max(dist, 0.001)), 0.0);
+            float falloff = u_falloffScale / max(dist * dist, 1024.0);
+            vec3 lcolor = vec3(lights[idx].color[0], lights[idx].color[1], lights[idx].color[2]) * u_surfaceLightScale;
+            unshadowed_radiance = lcolor * falloff * NdotL;
+
+            // Trace shadow ray
+            vis = traceShadow(var_WorldPos, lightSamplePos);
+        }
+
+        out_color.rgb = base.rgb * unshadowed_radiance * r.W * vis;
+        
+        // Write the combined reservoir for the next frame
+        writeReservoir(getPixelIndex(), r);
     }
 
     #endif
