@@ -142,6 +142,10 @@ void vk_imgui_draw( void ) {
         ri.Cvar_SetValue("r_fullbright", rtEnabled ? 1.0f : 0.0f);
     }
 
+    uint32_t activeLights = R_rtGetActiveLightCount();
+    uint32_t totalLights = tr.world ? tr.world->numStaticLights : 0;
+    ImGui::Text("Active Lights (after culling): %u / %u", activeLights, totalLights);
+
     bool useDynamicN = r_rtUseDynamicNWeight->integer != 0;
     if (ImGui::Checkbox("Use Dynamic N Weight", &useDynamicN)) {
         ri.Cvar_SetValue("r_rtUseDynamicNWeight", useDynamicN ? 1.0f : 0.0f);

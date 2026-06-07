@@ -1033,3 +1033,10 @@ void R_rtCopyFrameToHistory( void ) {
 	vk_record_image_layout_transition( cmd, world_rt.historyImage, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0, 0 );
 }
+
+uint32_t R_rtGetActiveLightCount( void ) {
+	if ( world_rt.rtParams ) {
+		return world_rt.rtParams->numLights;
+	}
+	return 0;
+}
