@@ -428,9 +428,11 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 	}
 #endif // USE_BUFFER_CLEAR
 
+#ifdef USE_VK_IMGUI
 	if (vk.active && !ri.VK_IsMinimized()) {
 		vk_imgui_begin_frame();
 	}
+#endif
 }
 
 /*
