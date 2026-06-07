@@ -189,7 +189,7 @@ static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsa
 // Created once per world load; mapped pointer kept in world_rt.rtParams,
 // destroyed in vk_rt_release_world.
 static void vk_rt_create_reservoir_buffers( void ) {
-	VkDeviceSize size = (VkDeviceSize)glConfig.vidWidth * glConfig.vidHeight * 16;
+	VkDeviceSize size = (VkDeviceSize)glConfig.vidWidth * glConfig.vidHeight * 24;
 	for ( int i = 0; i < 2; i++ ) {
 		vk_rt_create_buffer( size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qfalse,

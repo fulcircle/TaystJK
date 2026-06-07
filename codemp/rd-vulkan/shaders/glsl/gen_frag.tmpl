@@ -1,6 +1,10 @@
 #version 460
 #extension GL_EXT_ray_query : require
 
+#ifndef USE_DF
+layout(early_fragment_tests) in;
+#endif
+
 #if defined(USE_VBO_GHOUL2) || defined(USE_VBO_MDV)
 #define USE_VBO_MODEL
 #endif
@@ -175,6 +179,8 @@ struct Reservoir {
     uint  M;
     float weightSum;
     float W;
+    uint  packedNormal;
+    float depth;
 };
 
 layout(std430, set = 5, binding = 3) buffer ReservoirBuf0 {
@@ -204,6 +210,8 @@ void initReservoir(out Reservoir r) {
     r.M = 0u;
     r.weightSum = 0.0;
     r.W = 0.0;
+    r.packedNormal = 0u;
+    r.depth = 0.0;
 }
 
 bool updateReservoir(inout Reservoir r, uint lightIndex, float weight, float p_hat, float randVal) {
@@ -855,18 +863,27 @@ void main() {
         vec2 prevUV = prevNDC.xy * 0.5 + 0.5;
 
         if (prevUV.x >= 0.0 && prevUV.x <= 1.0 && prevUV.y >= 0.0 && prevUV.y <= 1.0 && prevClipPos.w > 0.0) {
-            uint prevPixelX = uint(prevUV.x * u_width);
-            uint prevPixelY = uint(prevUV.y * u_height);
+            uint prevPixelX = min(uint(prevUV.x * u_width), u_width - 1u);
+            uint prevPixelY = min(uint(prevUV.y * u_height), u_height - 1u);
             uint prevPixelIndex = prevPixelY * u_width + prevPixelX;
 
             Reservoir r_prev = readReservoir(prevPixelIndex);
             if (r_prev.lightIndex != 0xFFFFFFFFu && r_prev.W > 0.0) {
-                // Clamp history count to allow dynamic lighting/geometry updates to converge
-                r_prev.M = min(r_prev.M, 30u);
-                
-                float p_hat_prev = eval_p_hat(r_prev.lightIndex, var_WorldPos, worldNormal);
-                float weight = p_hat_prev * r_prev.W * r_prev.M;
-                combineReservoir(r, r_prev.lightIndex, weight, r_prev.M, rand_next(seed));
+                // Unpack geometry and check for disocclusion
+                vec3 normal_prev = unpackSnorm4x8(r_prev.packedNormal).xyz;
+                float depth_prev = r_prev.depth;
+                float depth_expected = prevClipPos.w;
+
+                bool disoccluded = (abs(depth_prev - depth_expected) / depth_expected > 0.05) || (dot(normal_prev, worldNormal) < 0.8);
+
+                if (!disoccluded) {
+                    // Clamp history count to allow dynamic lighting/geometry updates to converge
+                    r_prev.M = min(r_prev.M, 30u);
+                    
+                    float p_hat_prev = eval_p_hat(r_prev.lightIndex, var_WorldPos, worldNormal);
+                    float weight = p_hat_prev * r_prev.W * r_prev.M;
+                    combineReservoir(r, r_prev.lightIndex, weight, r_prev.M, rand_next(seed));
+                }
             }
         }
 
@@ -911,6 +928,8 @@ void main() {
         out_color.rgb = base.rgb * unshadowed_radiance * r.W * vis;
         
         // Write the combined reservoir for the next frame
+        r.packedNormal = packSnorm4x8(vec4(worldNormal, 0.0));
+        r.depth = 1.0 / gl_FragCoord.w;
         writeReservoir(getPixelIndex(), r);
     }
 
