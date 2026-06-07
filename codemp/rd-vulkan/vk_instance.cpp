@@ -90,7 +90,6 @@ PFN_vkCmdBlitImage								qvkCmdBlitImage;
 PFN_vkCmdClearAttachments						qvkCmdClearAttachments;
 PFN_vkCmdCopyBuffer								qvkCmdCopyBuffer;
 PFN_vkCmdCopyBufferToImage						qvkCmdCopyBufferToImage;
-PFN_vkCmdFillBuffer								qvkCmdFillBuffer;
 PFN_vkCmdCopyImage								qvkCmdCopyImage;
 PFN_vkCmdCopyImageToBuffer                      qvkCmdCopyImageToBuffer;
 PFN_vkCmdDraw									qvkCmdDraw;
@@ -1063,7 +1062,6 @@ __initStart:
 	INIT_DEVICE_FUNCTION(vkCmdClearAttachments)
 	INIT_DEVICE_FUNCTION(vkCmdCopyBuffer)
 	INIT_DEVICE_FUNCTION(vkCmdCopyBufferToImage)
-	INIT_DEVICE_FUNCTION(vkCmdFillBuffer)
 	INIT_DEVICE_FUNCTION(vkCmdCopyImage)
 	INIT_DEVICE_FUNCTION(vkCmdDraw)
 	INIT_DEVICE_FUNCTION(vkCmdDrawIndexed)
@@ -1207,7 +1205,6 @@ void vk_deinit_library( void )
 	qvkCmdClearAttachments = NULL;
 	qvkCmdCopyBuffer = NULL;
 	qvkCmdCopyBufferToImage = NULL;
-	qvkCmdFillBuffer = NULL;
 	qvkCmdCopyImage = NULL;
 	qvkCmdDraw = NULL;
 	qvkCmdDrawIndexed = NULL;

@@ -191,14 +191,9 @@ static void vk_rt_upload_buffer( VkDeviceSize size, const void *src, VkBufferUsa
 static void vk_rt_create_reservoir_buffers( void ) {
 	VkDeviceSize size = (VkDeviceSize)glConfig.vidWidth * glConfig.vidHeight * 24;
 	for ( int i = 0; i < 2; i++ ) {
-		vk_rt_create_buffer( size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		vk_rt_create_buffer( size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qfalse,
 			&world_rt.reservoirBuffers[i], &world_rt.reservoirMemory[i] );
-
-		// Clear the buffer to 0 to prevent garbage/NaN values on level load
-		VkCommandBuffer cmd = vk_begin_command_buffer();
-		qvkCmdFillBuffer( cmd, world_rt.reservoirBuffers[i], 0, size, 0 );
-		vk_end_command_buffer( cmd, __func__ );
 	}
 	world_rt.currentReservoirWriteIndex = 0;
 }
