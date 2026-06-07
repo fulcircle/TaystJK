@@ -887,7 +887,7 @@ void R_Register( void )
 	r_rtFalloffScale					= ri.Cvar_Get( "r_rtFalloffScale",					"2.0",						CVAR_CHEAT, "RT: scale falloff of light intensity" );
 	r_rtEnable							= ri.Cvar_Get( "r_rtEnable",						"1",						CVAR_CHEAT, "RT: 1 = direct lighting on, 0 = bypass (show lightmap/fullbright)" );
 	r_rtLightCullRadius					= ri.Cvar_Get( "r_rtLightCullRadius",				"2048.0",					CVAR_CHEAT, "RT: distance radius within which to cull active lights" );
-	r_rtUseDynamicNWeight				= ri.Cvar_Get( "r_rtUseDynamicNWeight",				"1",						CVAR_CHEAT, "RT: 1 = use dynamic N-history blend weights, 0 = constant blend weight" );
+	r_rtUseDynamicNWeight				= ri.Cvar_Get( "r_rtUseDynamicNWeight",				"0",						CVAR_CHEAT, "RT: 1 = use dynamic N-history blend weights, 0 = constant blend weight" );
 	r_rtMaxHistoryN						= ri.Cvar_Get( "r_rtMaxHistoryN",					"32.0",						CVAR_CHEAT, "RT: maximum frame history length for temporal accumulation" );
 	r_distanceCull						= ri.Cvar_Get( "r_distanceCull",					"0",						CVAR_ARCHIVE_ND, "" );
 	r_portalOnly						= ri.Cvar_Get( "r_portalOnly",						"0",						CVAR_CHEAT, "" );
