@@ -1952,6 +1952,8 @@ extern cvar_t	*r_rtSurfaceLightScale;
 extern cvar_t	*r_rtFalloffScale;
 extern cvar_t	*r_rtEnable;
 extern cvar_t	*r_rtLightCullRadius;
+extern cvar_t	*r_rtUseDynamicNWeight;
+extern cvar_t	*r_rtMaxHistoryN;
 extern cvar_t	*r_ext_multisample;
 extern cvar_t	*r_ext_supersample;
 extern cvar_t	*r_ext_alpha_to_coverage;

@@ -21,7 +21,9 @@ typedef struct {
 	uint32_t					numLights;
 	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
 	uint32_t					frameCount;
-	uint32_t					padding[3];
+	uint32_t					useDynamicNWeight;
+	float						maxHistoryN;
+	uint32_t					padding;
 } rtParams_t;
 
 typedef struct {
@@ -959,6 +961,8 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->surfaceLightScale = r_rtSurfaceLightScale->value;
 	world_rt.rtParams->frameCount = tr.frameCount;
 	world_rt.rtParams->numLights = activeCount;
+	world_rt.rtParams->useDynamicNWeight = r_rtUseDynamicNWeight->integer;
+	world_rt.rtParams->maxHistoryN = r_rtMaxHistoryN->value;
 	Com_Memcpy(world_rt.rtParams->prevMvp, prevMvp, sizeof(float)*16);
 
 	if (tr.frameCount == 0 || prevFrameCount < tr.frameCount) {

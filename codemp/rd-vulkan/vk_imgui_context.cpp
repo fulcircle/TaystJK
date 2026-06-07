@@ -142,6 +142,18 @@ void vk_imgui_draw( void ) {
         ri.Cvar_SetValue("r_fullbright", rtEnabled ? 1.0f : 0.0f);
     }
 
+    bool useDynamicN = r_rtUseDynamicNWeight->integer != 0;
+    if (ImGui::Checkbox("Use Dynamic N Weight", &useDynamicN)) {
+        ri.Cvar_SetValue("r_rtUseDynamicNWeight", useDynamicN ? 1.0f : 0.0f);
+    }
+
+    if (useDynamicN) {
+        float maxN = r_rtMaxHistoryN->value;
+        if (ImGui::SliderFloat("Max History N", &maxN, 1.0f, 128.0f)) {
+            ri.Cvar_SetValue("r_rtMaxHistoryN", maxN);
+        }
+    }
+
     float falloff = r_rtFalloffScale->value;
     if (ImGui::SliderFloat("Light Falloff", &falloff, 0.1f, 10.0f)) {
         ri.Cvar_SetValue("r_rtFalloffScale", falloff);
