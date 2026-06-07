@@ -23,6 +23,11 @@ typedef struct {
 	uint32_t					frameCount;
 	uint32_t					useDynamicNWeight;
 	uint32_t					padding;
+	uint32_t					readIndex;
+	uint32_t					writeIndex;
+	uint32_t					width;
+	uint32_t					height;
+	uint32_t					padding2;
 } rtParams_t;
 
 typedef struct {
@@ -193,6 +198,30 @@ static void vk_rt_create_reservoir_buffers( void ) {
 	world_rt.currentReservoirWriteIndex = 0;
 }
 
+static void vk_rt_write_reservoir_buffers( VkDescriptorSet set ) {
+	VkDescriptorBufferInfo bufInfo[2];
+	VkWriteDescriptorSet   write[2];
+
+	for ( int i = 0; i < 2; i++ ) {
+		bufInfo[i].buffer = world_rt.reservoirBuffers[i];
+		bufInfo[i].offset = 0;
+		bufInfo[i].range  = VK_WHOLE_SIZE;
+
+		write[i].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write[i].pNext            = NULL;
+		write[i].dstSet           = set;
+		write[i].dstBinding       = 3 + i;
+		write[i].dstArrayElement  = 0;
+		write[i].descriptorCount  = 1;
+		write[i].descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		write[i].pImageInfo       = NULL;
+		write[i].pBufferInfo      = &bufInfo[i];
+		write[i].pTexelBufferView = NULL;
+	}
+
+	qvkUpdateDescriptorSets( vk.device, 2, write, 0, NULL );
+}
+
 static void vk_rt_create_params_buffer( void )
 {
 	vk_rt_create_buffer( sizeof( rtParams_t ), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -202,6 +231,8 @@ static void vk_rt_create_params_buffer( void )
 	VK_CHECK( qvkMapMemory( vk.device, world_rt.paramsMemory, 0, VK_WHOLE_SIZE, 0, (void **)&world_rt.rtParams ) );
 
 	vk_rt_create_reservoir_buffers();
+	vk_rt_write_reservoir_buffers( vk.descriptor_rt );
+	vk_rt_write_reservoir_buffers( vk.descriptor_rt_empty );
 }
 
 static void vk_rt_build_world_blas ( void ) {
@@ -893,6 +924,10 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->frameCount = tr.frameCount;
 	world_rt.rtParams->numLights = activeCount;
 	world_rt.rtParams->useDynamicNWeight = r_rtUseDynamicNWeight->integer;
+	world_rt.rtParams->readIndex = tr.frameCount % 2;
+	world_rt.rtParams->writeIndex = (tr.frameCount + 1) % 2;
+	world_rt.rtParams->width = glConfig.vidWidth;
+	world_rt.rtParams->height = glConfig.vidHeight;
 	Com_Memcpy(world_rt.rtParams->prevMvp, prevMvp, sizeof(float)*16);
 
 	if (tr.frameCount == 0 || prevFrameCount < tr.frameCount) {

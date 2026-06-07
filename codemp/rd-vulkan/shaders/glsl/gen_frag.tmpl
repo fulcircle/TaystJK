@@ -163,11 +163,81 @@ layout(set = 5, binding = 2) uniform RtParams {
     uint  u_frameCount;
     uint  u_useDynamicNWeight;
     uint  u_padding;
+    uint  u_readIndex;
+    uint  u_writeIndex;
+    uint  u_width;
+    uint  u_height;
+    uint  u_padding2;
 };
+
+struct Reservoir {
+    uint  lightIndex;
+    uint  M;
+    float weightSum;
+    float W;
+};
+
+layout(std430, set = 5, binding = 3) buffer ReservoirBuf0 {
+    Reservoir reservoirs0[];
+};
+
+layout(std430, set = 5, binding = 4) buffer ReservoirBuf1 {
+    Reservoir reservoirs1[];
+};
+
+float eval_p_hat(uint lightIndex, vec3 pos, vec3 normal) {
+    vec3 toLight = vec3(lights[lightIndex].lightCentroid[0], lights[lightIndex].lightCentroid[1], lights[lightIndex].lightCentroid[2]) - pos;
+    float distSq = dot(toLight, toLight);
+    float dist = sqrt(distSq);
+    float NdotL = max(dot(normal, toLight / max(dist, 0.001)), 0.0);
+    float falloff = u_falloffScale / max(distSq, 1024.0);
+    vec3 lcolor = vec3(lights[lightIndex].color[0], lights[lightIndex].color[1], lights[lightIndex].color[2]) * u_surfaceLightScale;
+    return max(lcolor.r, max(lcolor.g, lcolor.b)) * falloff * NdotL;
+}
 
 layout(push_constant) uniform EmitterPC {
     layout(offset = 64) int u_isEmitter;
 };
+
+void initReservoir(out Reservoir r) {
+    r.lightIndex = 0xFFFFFFFFu; // Invalid light ID
+    r.M = 0u;
+    r.weightSum = 0.0;
+    r.W = 0.0;
+}
+
+bool updateReservoir(inout Reservoir r, uint lightIndex, float weight, float p_hat, float randVal) {
+    r.weightSum += weight;
+    r.M += 1u;
+    float selectionProbability = (r.weightSum > 0.0) ? (weight / r.weightSum) : 0.0;
+    if (randVal < selectionProbability) {
+        r.lightIndex = lightIndex;
+        // Note: p_hat is stored/evaluated for the selected candidate
+        return true;
+    }
+    return false;
+}
+
+uint getPixelIndex() {
+    // Calculate flat 1D screen index
+    return uint(gl_FragCoord.y) * u_width + uint(gl_FragCoord.x);
+}
+
+void writeReservoir(uint pixelIdx, Reservoir r) {
+    if (u_writeIndex == 0u) {
+        reservoirs0[pixelIdx] = r;
+    } else {
+        reservoirs1[pixelIdx] = r;
+    }
+}
+
+Reservoir readReservoir(uint pixelIdx) {
+    if (u_readIndex == 0u) {
+        return reservoirs0[pixelIdx];
+    } else {
+        return reservoirs1[pixelIdx];
+    }
+}
 
 // Trace a shadow ray from worldPos toward lightPos against the world TLAS.
 // Returns 1.0 if the light is visible (unoccluded), 0.0 if something blocks it.
@@ -751,6 +821,19 @@ void main() {
     out_color = base;
 
     if (u_isEmitter == 0 && rt_direct_lighting == 1 && u_rtEnable != 0u && u_numLights > 0u) {
+        uint seed = rand_seed(uvec2(gl_FragCoord.xy), u_frameCount);
+
+        int num_random_lights = 3;
+        float q = 1.0 / u_numLights;
+
+        for (int i = 0; i < 3; i++) {
+            float r = rand_next(seed);
+            uint rand_index = uint(floor(r * u_numLights));
+            float p_hat = eval_p_hat(rand_index, var_WorldPos, worldNormal);
+        }
+
+        Reservoir r;
+        initReservoir(r);
     }
 
     #endif

@@ -132,7 +132,7 @@ void vk_create_descriptor_layout( void )
 			pool_size[3].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			pool_size[3].descriptorCount = 2;	// world TLAS + empty TLAS
 			pool_size[4].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-			pool_size[4].descriptorCount = 2;
+			pool_size[4].descriptorCount = 6;
 
 			pool_size[5].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			pool_size[5].descriptorCount = 2;
@@ -160,11 +160,13 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	VkDescriptorType types[3];
+	       	VkDescriptorType types[5];
 			types[0] = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			types[2] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	       	vk_create_layout_bindings( 3, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
+			types[3] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+			types[4] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	       	vk_create_layout_bindings( 5, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
         }
     }
 }
