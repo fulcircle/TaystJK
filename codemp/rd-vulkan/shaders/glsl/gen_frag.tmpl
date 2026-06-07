@@ -782,7 +782,7 @@ void main() {
                 vec3 singleAnalytic = lcolor * falloff * NdotL;
                 float weight = max(singleAnalytic.r, max(singleAnalytic.g, singleAnalytic.b));
 
-                if (weight >= 0.01) {
+                if (weight >= 0.0001) {
                     weights[numCandidateLights] = weight;
                     globalIndices[numCandidateLights] = j;
                     totalAnalyticRadiance += singleAnalytic;
@@ -857,13 +857,6 @@ void main() {
 
             // Demodulate history to get historical visibility
             vec3 history_visibility = clamp(history_color / max(unshadowed_color, 0.001), 0.0, 1.0);
-
-            // Disocclusion check based on visibility distance
-            float threshold = 0.20;
-            if (distance(history_visibility, vec3(vis_sample)) > threshold) {
-                newN = 1.0;
-                alpha = 1.0;
-            }
 
             final_visibility = mix(history_visibility, vec3(vis_sample), alpha);
         }

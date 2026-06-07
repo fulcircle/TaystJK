@@ -929,6 +929,13 @@ void R_rtUpdateParams( void ) {
 		VectorCopy( backEnd.viewParms.ori.origin, camOrigin );
 		float cullRad = r_rtLightCullRadius->value;
 
+		struct CulledLight {
+			rtLight_t* light;
+			float dist;
+		};
+		static CulledLight culled[MAX_RT_LIGHTS];
+		int culledCount = 0;
+
 		for ( int i = 0; i < (int)tr.world->numStaticLights; i++ ) {
 			rtLight_t *light = &tr.world->rtStaticLights[i];
 
@@ -938,15 +945,27 @@ void R_rtUpdateParams( void ) {
 			float dist = sqrtf( dx * dx + dy * dy + dz * dz );
 
 			if ( dist <= cullRad + light->boundingRadius ) {
-				Com_Memcpy( &world_rt.mappedLights[activeCount], light, sizeof(rtLight_t) );
-				activeCount++;
-				if ( activeCount >= MAX_RT_LIGHTS ) {
+				culled[culledCount].light = light;
+				culled[culledCount].dist = dist;
+				culledCount++;
+				if ( culledCount >= MAX_RT_LIGHTS ) {
 					break;
 				}
 			}
 		}
 
-		if ( activeCount == 0 ) {
+		if ( culledCount > 0 ) {
+			qsort( culled, culledCount, sizeof( CulledLight ), []( const void *a, const void *b ) -> int {
+				float distA = ((const CulledLight*)a)->dist;
+				float distB = ((const CulledLight*)b)->dist;
+				return (distA < distB) ? -1 : ((distA > distB) ? 1 : 0);
+			} );
+
+			for ( int i = 0; i < culledCount; i++ ) {
+				Com_Memcpy( &world_rt.mappedLights[i], culled[i].light, sizeof(rtLight_t) );
+			}
+			activeCount = culledCount;
+		} else {
 			Com_Memset( world_rt.mappedLights, 0, sizeof(rtLight_t) );
 		}
 	}
