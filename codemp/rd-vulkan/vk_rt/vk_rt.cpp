@@ -21,7 +21,7 @@ typedef struct {
 	uint32_t					numLights;
 	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
 	uint32_t					frameCount;
-	uint32_t					useDynamicNWeight;
+	uint32_t					unused;
 	uint32_t					padding;
 	uint32_t					readIndex;
 	uint32_t					writeIndex;
@@ -928,7 +928,7 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->surfaceLightScale = r_rtSurfaceLightScale->value;
 	world_rt.rtParams->frameCount = tr.frameCount;
 	world_rt.rtParams->numLights = activeCount;
-	world_rt.rtParams->useDynamicNWeight = r_rtUseDynamicNWeight->integer;
+	world_rt.rtParams->unused = 0;
 	world_rt.rtParams->readIndex = tr.frameCount % 2;
 	world_rt.rtParams->writeIndex = (tr.frameCount + 1) % 2;
 	world_rt.rtParams->width = glConfig.vidWidth;
