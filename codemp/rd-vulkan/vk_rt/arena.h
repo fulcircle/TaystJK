@@ -25,18 +25,12 @@ typedef struct {
 	uint32_t numElements;
 } arena_t;
 
-static inline arena_t arena_init( size_t elemSize, size_t align ) {
-	arena_t a = { 0 };
-	a.elemSize = elemSize;
-	a.align    = align;
-	return a;
-}
-
 static inline void *arena_alloc( arena_t *a, size_t elemSize, size_t align );
 static inline void arena_free( arena_t *a );
 
 #define PushStruct(arena, Type) (Type *)arena_alloc(arena, sizeof(Type), __alignof(Type))
 #define GetBuffer(arena, Type)  (Type *)(arena)->base
+#define Clear(arena)            arena_free(arena)
 
 // Returns a pointer to a fresh, uninitialized slot; grows the backing buffer if
 // full. The caller fills the returned slot.

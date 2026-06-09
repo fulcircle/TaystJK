@@ -752,10 +752,10 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 	}
 	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lights.numElements, numsurfaces );
 	
-	arena_free(&lights);
-	arena_free(&lightClusters);
-	arena_free(&lightListLights);
-	arena_free(&lightListOffsets);
+	Clear(&lights);
+	Clear(&lightClusters);
+	Clear(&lightListLights);
+	Clear(&lightListOffsets);
 }
 
 static void R_rtBuildWorldLightBuffers( rtLight_t *staticLights, uint32_t numLights ) {
