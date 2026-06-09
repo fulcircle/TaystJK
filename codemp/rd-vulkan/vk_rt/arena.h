@@ -36,6 +36,45 @@ static inline arena_t arena_init( size_t elemSize, size_t align ) {
 	return a;
 }
 
+static inline void *arena_alloc( arena_t *a );
+static inline void arena_free( arena_t *a );
+
+// A non-templated C++ class wrapping arena_t that stores type information as
+// member variables, with explicit initialization and destruction (no RAII).
+class DynamicArray {
+public:
+	void init(size_t elemSize, size_t align) {
+		m_arena = arena_init(elemSize, align);
+		m_elemSize = elemSize;
+		m_align = align;
+	}
+
+	void free() {
+		arena_free(&m_arena);
+	}
+
+	void* alloc() {
+		return arena_alloc(&m_arena);
+	}
+
+	void* buffer() const {
+		return m_arena.base;
+	}
+
+	uint32_t count() const {
+		return m_arena.numElements;
+	}
+
+	size_t used() const {
+		return m_arena.used;
+	}
+
+private:
+	arena_t m_arena;
+	size_t  m_elemSize;
+	size_t  m_align;
+};
+
 // Returns a pointer to a fresh, uninitialized slot; grows the backing buffer if
 // full. The caller fills the returned slot.
 static inline void *arena_alloc( arena_t *a ) {
