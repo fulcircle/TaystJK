@@ -630,11 +630,8 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 	int numsurfaces = worldData.numsurfaces;
 	vec3_t white = {1, 1, 1};
 	
-	DynamicArray lights;
-	lights.init(sizeof(rtLight_t), __alignof(rtLight_t));
-
-	DynamicArray lightClusters;
-	lightClusters.init(sizeof(uint32_t), __alignof(uint32_t));
+	arena_t lights = { 0 };
+	arena_t lightClusters = { 0 };
 
 	for ( int i = 0; i < numsurfaces; i++ ) {
 		
@@ -648,7 +645,7 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 			continue;
 		}
 
-		if ( worldData.numStaticLights + lights.count() >= MAX_RT_LIGHTS ) {  // no silent cap
+		if ( worldData.numStaticLights + lights.numElements >= MAX_RT_LIGHTS ) {  // no silent cap
 			ri.Printf( PRINT_WARNING, "RT: MAX_RT_LIGHTS hit, skipping rest of surface lights\n" );
 			break;
 		}
@@ -663,7 +660,7 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 		}
 		
 		for ( int k = 0; k + 2 < tess.numIndexes; k += 3 ) {
-			rtLight_t *polygon = (rtLight_t *)lights.alloc();
+			rtLight_t *polygon = PushStruct(&lights, rtLight_t);
 			
 			polygon->type = LIGHT_TYPE_POLYGON;
 			VectorScale(white, surface->shader->surfaceLight, polygon->color);
@@ -702,7 +699,7 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 			// Lookup and store cluster the light centroid belongs to
 			uint32_t leafNum = ri.CM_PointLeafnum(polygon->lightCentroid);
 			uint32_t clusterId = ri.CM_LeafCluster(leafNum);
-			uint32_t *lightCluster = (uint32_t *)lightClusters.alloc();
+			uint32_t *lightCluster = PushStruct(&lightClusters, uint32_t);
 			*lightCluster = clusterId;
 		} 
 
@@ -717,51 +714,48 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 		*          add light to PVS set for this cluster
 	*/
 
-	DynamicArray lightListLights;
-	lightListLights.init(sizeof(uint32_t), __alignof(uint32_t));
+	arena_t lightListLights = { 0 };
+	arena_t lightListOffsets = { 0 };
 
-	DynamicArray lightListOffsets;
-	lightListOffsets.init(sizeof(uint32_t), __alignof(uint32_t));
-
-	uint32_t *lightHomeClusters = (uint32_t *)lightClusters.buffer();
+	uint32_t *lightHomeClusters = GetBuffer(&lightClusters, uint32_t);
 
 	for ( int targetCluster = 0; targetCluster < worldData.numClusters; targetCluster++ ) {
 		// Record the start index for targetCluster's light list
-		uint32_t *offsetSlot = (uint32_t *)lightListOffsets.alloc();
-		*offsetSlot = lightListLights.count();
+		uint32_t *offsetSlot = PushStruct(&lightListOffsets, uint32_t);
+		*offsetSlot = lightListLights.numElements;
 
 		const byte *pvs = ri.CM_ClusterPVS(targetCluster);
 
-		for ( int lightIndex = 0; lightIndex < lights.count(); lightIndex++ ) {
+		for ( int lightIndex = 0; lightIndex < (int)lights.numElements; lightIndex++ ) {
 			uint32_t lightHomeCluster = lightHomeClusters[lightIndex];
 
 			// Check PVS visibility between the light's home cluster and our target cluster
 			if ( pvs == NULL || ( pvs[lightHomeCluster >> 3] & ( 1 << ( lightHomeCluster & 7 ) ) ) != 0 ) {
-				uint32_t *lightListSlot = (uint32_t *)lightListLights.alloc();
+				uint32_t *lightListSlot = PushStruct(&lightListLights, uint32_t);
 				*lightListSlot = lightIndex;
 			}
 		}
 	}
 
 	// Record the final offset to define the end of the last cluster's light list
-	uint32_t *finalOffsetSlot = (uint32_t *)lightListOffsets.alloc();
-	*finalOffsetSlot = lightListLights.count();
+	uint32_t *finalOffsetSlot = PushStruct(&lightListOffsets, uint32_t);
+	*finalOffsetSlot = lightListLights.numElements;
 
-	worldData.numStaticLights = lights.count();
+	worldData.numStaticLights = lights.numElements;
 	worldData.rtStaticLights = NULL;
-	if (lights.count() > 0) {
+	if (lights.numElements > 0) {
 		worldData.rtStaticLights =
-			(rtLight_t *)Hunk_Alloc( lights.used(), h_low );
+			(rtLight_t *)Hunk_Alloc( lights.used, h_low );
 	
-		memcpy( worldData.rtStaticLights, lights.buffer(), lights.used());
+		memcpy( worldData.rtStaticLights, GetBuffer(&lights, rtLight_t), lights.used);
 
 	}
-	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lights.count(), numsurfaces );
+	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lights.numElements, numsurfaces );
 	
-	lights.free();
-	lightClusters.free();
-	lightListLights.free();
-	lightListOffsets.free();
+	arena_free(&lights);
+	arena_free(&lightClusters);
+	arena_free(&lightListLights);
+	arena_free(&lightListOffsets);
 }
 
 static void R_rtBuildWorldLightBuffers( rtLight_t *staticLights, uint32_t numLights ) {

@@ -4,10 +4,6 @@
 #include <cstddef>   // size_t
 #include <cstdint>   // uint32_t
 #include <cstdlib>   // realloc, free
-
-#define ArenaInit(Type) arena_init(sizeof(Type), __alignof(Type))
-#define ArenaNext(arena, Type) (Type *)arena_alloc(arena)
-
 // Lightweight growable bump arena sized to a fixed element. The backing buffer
 // grows geometrically via realloc.
 //
@@ -36,48 +32,19 @@ static inline arena_t arena_init( size_t elemSize, size_t align ) {
 	return a;
 }
 
-static inline void *arena_alloc( arena_t *a );
+static inline void *arena_alloc( arena_t *a, size_t elemSize, size_t align );
 static inline void arena_free( arena_t *a );
 
-// A non-templated C++ class wrapping arena_t that stores type information as
-// member variables, with explicit initialization and destruction (no RAII).
-class DynamicArray {
-public:
-	void init(size_t elemSize, size_t align) {
-		m_arena = arena_init(elemSize, align);
-		m_elemSize = elemSize;
-		m_align = align;
-	}
-
-	void free() {
-		arena_free(&m_arena);
-	}
-
-	void* alloc() {
-		return arena_alloc(&m_arena);
-	}
-
-	void* buffer() const {
-		return m_arena.base;
-	}
-
-	uint32_t count() const {
-		return m_arena.numElements;
-	}
-
-	size_t used() const {
-		return m_arena.used;
-	}
-
-private:
-	arena_t m_arena;
-	size_t  m_elemSize;
-	size_t  m_align;
-};
+#define PushStruct(arena, Type) (Type *)arena_alloc(arena, sizeof(Type), __alignof(Type))
+#define GetBuffer(arena, Type)  (Type *)(arena)->base
 
 // Returns a pointer to a fresh, uninitialized slot; grows the backing buffer if
 // full. The caller fills the returned slot.
-static inline void *arena_alloc( arena_t *a ) {
+static inline void *arena_alloc( arena_t *a, size_t elemSize, size_t align ) {
+	if ( a->elemSize == 0 ) {
+		a->elemSize = elemSize;
+		a->align    = align;
+	}
 	size_t offset = ( a->used + ( a->align - 1 ) ) & ~( a->align - 1 );
 	if ( offset + a->elemSize > a->capacity ) {
 		size_t newCap = a->capacity ? a->capacity * 2 : 64 * 1024;
