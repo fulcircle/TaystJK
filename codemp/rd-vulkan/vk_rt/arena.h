@@ -20,8 +20,6 @@ typedef struct {
 	char    *base;
 	size_t   used;
 	size_t   capacity;
-	size_t   elemSize;
-	size_t   align;        // power of two; must divide elemSize for tight packing
 	uint32_t numElements;
 } arena_t;
 
@@ -34,15 +32,11 @@ static inline void arena_free( arena_t *a );
 
 // Returns a pointer to a fresh, uninitialized slot; grows the backing buffer if
 // full. The caller fills the returned slot.
-static inline void *arena_alloc( arena_t *a, size_t elemSize, size_t align ) {
-	if ( a->elemSize == 0 ) {
-		a->elemSize = elemSize;
-		a->align    = align;
-	}
-	size_t offset = ( a->used + ( a->align - 1 ) ) & ~( a->align - 1 );
-	if ( offset + a->elemSize > a->capacity ) {
+static inline void *arena_alloc( arena_t *a, size_t size, size_t align ) {
+	size_t offset = ( a->used + ( align - 1 ) ) & ~( align - 1 );
+	if ( offset + size > a->capacity ) {
 		size_t newCap = a->capacity ? a->capacity * 2 : 64 * 1024;
-		while ( offset + a->elemSize > newCap )
+		while ( offset + size > newCap )
 			newCap *= 2;
 		char *grown = (char *)realloc( a->base, newCap );
 		if ( !grown )
@@ -51,7 +45,7 @@ static inline void *arena_alloc( arena_t *a, size_t elemSize, size_t align ) {
 		a->capacity = newCap;
 	}
 	void *p = a->base + offset;
-	a->used = offset + a->elemSize;
+	a->used = offset + size;
 	a->numElements++;
 	return p;
 }
