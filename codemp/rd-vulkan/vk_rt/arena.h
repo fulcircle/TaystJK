@@ -5,6 +5,9 @@
 #include <cstdint>   // uint32_t
 #include <cstdlib>   // realloc, free
 
+#define ArenaInit(Type) arena_init(sizeof(Type), __alignof(Type))
+#define ArenaNext(arena, Type) (Type *)arena_alloc(arena)
+
 // Lightweight growable bump arena sized to a fixed element. The backing buffer
 // grows geometrically via realloc.
 //
