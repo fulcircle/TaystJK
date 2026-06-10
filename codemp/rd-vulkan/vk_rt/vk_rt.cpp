@@ -31,6 +31,11 @@ typedef struct {
 } rtParams_t;
 
 typedef struct {
+	vec3_t mins;
+	vec3_t maxs;
+} rtAABB_t;
+
+typedef struct {
 	VkBuffer	   positionBuffer;
 	VkDeviceMemory positionMemory;
 	VkBuffer       indexBuffer;
@@ -750,12 +755,44 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 		memcpy( worldData.rtStaticLights, GetBuffer(&lights, rtLight_t), lights.used);
 
 	}
+
+	rtAABB_t *clusterAABBs = (rtAABB_t *)Z_Malloc(worldData.numClusters * sizeof(rtAABB_t), TAG_TEMP_WORKSPACE, qtrue, __alignof(rtAABB_t));
+	for (int i = 0; i < worldData.numClusters; i++) {
+		clusterAABBs[i].mins[0] = INFINITY;
+		clusterAABBs[i].mins[1] = INFINITY;
+		clusterAABBs[i].mins[2] = INFINITY;
+
+		clusterAABBs[i].maxs[0] = -INFINITY;
+		clusterAABBs[i].maxs[1] = -INFINITY;
+		clusterAABBs[i].maxs[2] = -INFINITY;
+	}
+
+	for (int i = worldData.numDecisionNodes; i < worldData.numnodes; i++) {
+		mnode_t node = worldData.nodes[i];
+		int clusterIndex = node.cluster;
+		if (clusterIndex >= 0 && clusterIndex < worldData.numClusters) {
+			float *currentMins = clusterAABBs[clusterIndex].mins;
+			currentMins[0] = MIN(node.mins[0], currentMins[0]);
+			currentMins[1] = MIN(node.mins[1], currentMins[1]);
+			currentMins[2] = MIN(node.mins[2], currentMins[2]);
+
+			float *currentMaxs = clusterAABBs[clusterIndex].maxs; 
+			currentMaxs[0] = MAX(node.maxs[0], currentMaxs[0]);
+			currentMaxs[1] = MAX(node.maxs[1], currentMaxs[1]);
+			currentMaxs[2] = MAX(node.maxs[2], currentMaxs[2]);
+		}
+	}
+
+	/* for each */
+
 	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lights.numElements, numsurfaces );
 	
 	Clear(&lights);
 	Clear(&lightClusters);
 	Clear(&lightListLights);
 	Clear(&lightListOffsets);
+
+	Z_Free( clusterAABBs );
 }
 
 static void R_rtBuildWorldLightBuffers( rtLight_t *staticLights, uint32_t numLights ) {
