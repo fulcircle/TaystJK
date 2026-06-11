@@ -193,8 +193,10 @@ layout(std430, set = 5, binding = 4) buffer ReservoirBuf1 {
 
 struct BspNode {
     vec4 plane;
-    int children[2];
-    int padding[2];
+    int child0;
+    int child1;
+    int pad0;
+    int pad1;
 };
 
 layout(std430, set = 5, binding = 5) readonly buffer LightListOffsets {
@@ -249,7 +251,7 @@ int get_cluster_index(vec3 worldPos) {
         
         // Check which side of the plane the point is on
         float dist = dot(worldPos, node.plane.xyz) - node.plane.w;
-        int nextIndex = (dist >= 0.0) ? node.children[0] : node.children[1];
+        int nextIndex = (dist >= 0.0) ? node.child0 : node.child1;
         
         if (nextIndex < 0) {
             // Decoded negative index points to the bspLeaves buffer
@@ -393,7 +395,7 @@ layout(depth_less) out float gl_FragDepth;
 layout(location = 0) out vec4 out_color;
 #endif
 
-layout(location = 9) in vec3 var_WorldPos;
+layout(location = 10) in vec3 var_WorldPos;
 
 #ifdef USE_ATEST
 layout(constant_id = 0) const int alpha_test_func = 0;
@@ -923,7 +925,7 @@ void main() {
     if (u_isEmitter == 0 && rt_direct_lighting == 1 && u_rtEnable != 0u && u_numLights > 0u) {
         uint seed = rand_seed(uvec2(gl_FragCoord.xy), u_frameCount);
 
-        int clusterId = get_cluster_index(var_WorldPos);
+        int clusterId = get_cluster_index(var_WorldPos + worldNormal * 2.0);
         uint numLightsToSample = u_numLights;
         bool useClusterList = false;
         uint startOffset = 0u;

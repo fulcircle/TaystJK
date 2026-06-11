@@ -991,7 +991,10 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 			VectorNormalize2(crossProd, polygon->normal);
 
 			// Lookup and store cluster the light centroid belongs to
-			uint32_t leafNum = ri.CM_PointLeafnum(polygon->lightCentroid);
+			// Push query position slightly along normal (pointing into the room) to avoid solid leaf (-1) classification
+			vec3_t queryPos;
+			VectorMA(polygon->lightCentroid, 2.0f, polygon->normal, queryPos);
+			uint32_t leafNum = ri.CM_PointLeafnum(queryPos);
 			uint32_t clusterId = ri.CM_LeafCluster(leafNum);
 			uint32_t *lightCluster = PushStruct(&lightClusters, uint32_t);
 			*lightCluster = clusterId;
@@ -1053,7 +1056,7 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 			uint32_t lightHomeCluster = lightHomeClusters[lightIndex];
 
 			// --- Check 1: PVS Visibility Check ---
-			if ( pvs == NULL || ( pvs[lightHomeCluster >> 3] & ( 1 << ( lightHomeCluster & 7 ) ) ) != 0 ) {
+			if ( pvs == NULL || lightHomeCluster == (uint32_t)-1 || ( pvs[lightHomeCluster >> 3] & ( 1 << ( lightHomeCluster & 7 ) ) ) != 0 ) {
 				rtLight_t *light = &lights_buffer[lightIndex];
 
 				 const float *mins = clusterAABBs[targetCluster].mins;
@@ -1122,9 +1125,12 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 	}
 
 	if ( vk.rayQuery ) {
-		// 1. Upload BSP Decision Nodes
+		gpuBspNode_t *gpuNodes = NULL;
+		int32_t *gpuLeaves = NULL;
+
+		// 1. Prepare BSP Decision Nodes
 		if ( worldData.numDecisionNodes > 0 ) {
-			gpuBspNode_t *gpuNodes = (gpuBspNode_t *)Z_Malloc( worldData.numDecisionNodes * sizeof(gpuBspNode_t), TAG_TEMP_WORKSPACE, qtrue );
+			gpuNodes = (gpuBspNode_t *)Z_Malloc( worldData.numDecisionNodes * sizeof(gpuBspNode_t), TAG_TEMP_WORKSPACE, qtrue );
 			for ( int i = 0; i < worldData.numDecisionNodes; i++ ) {
 				mnode_t *node = &worldData.nodes[i];
 				gpuNodes[i].plane[0] = node->plane->normal[0];
@@ -1141,25 +1147,31 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 					}
 				}
 			}
-			vk_rt_upload_buffer( worldData.numDecisionNodes * sizeof(gpuBspNode_t), gpuNodes,
-				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.bspNodesBuffer, &world_rt.bspNodesMemory );
-			Z_Free( gpuNodes );
 		}
 
-		// 2. Upload BSP Leaf Nodes (Cluster IDs)
+		// 2. Prepare BSP Leaf Nodes (Cluster IDs)
 		int numLeaves = worldData.numnodes - worldData.numDecisionNodes;
 		if ( numLeaves > 0 ) {
-			int32_t *gpuLeaves = (int32_t *)Z_Malloc( numLeaves * sizeof(int32_t), TAG_TEMP_WORKSPACE, qtrue );
+			gpuLeaves = (int32_t *)Z_Malloc( numLeaves * sizeof(int32_t), TAG_TEMP_WORKSPACE, qtrue );
 			for ( int i = 0; i < numLeaves; i++ ) {
 				mnode_t *node = &worldData.nodes[worldData.numDecisionNodes + i];
 				gpuLeaves[i] = node->cluster;
 			}
+		}
+
+		// 3. Upload BSP Nodes & Leafs
+		if ( worldData.numDecisionNodes > 0 && gpuNodes ) {
+			vk_rt_upload_buffer( worldData.numDecisionNodes * sizeof(gpuBspNode_t), gpuNodes,
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.bspNodesBuffer, &world_rt.bspNodesMemory );
+			Z_Free( gpuNodes );
+		}
+		if ( numLeaves > 0 && gpuLeaves ) {
 			vk_rt_upload_buffer( numLeaves * sizeof(int32_t), gpuLeaves,
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.bspLeavesBuffer, &world_rt.bspLeavesMemory );
 			Z_Free( gpuLeaves );
 		}
 
-		// 3. Upload Light List Offsets and Culled Light Lists
+		// 4. Upload Light List Offsets and Culled Light Lists
 		if ( lightListOffsets.used > 0 ) {
 			vk_rt_upload_buffer( lightListOffsets.used, GetBuffer(&lightListOffsets, uint32_t),
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightListOffsetsBuffer, &world_rt.lightListOffsetsMemory );
