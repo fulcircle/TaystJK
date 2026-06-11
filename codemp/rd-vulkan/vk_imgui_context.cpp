@@ -152,6 +152,7 @@ void vk_imgui_draw( void ) {
     if (ImGui::SliderFloat("Light Falloff", &falloff, 0.1f, 10.0f)) {
         ri.Cvar_SetValue("r_rtFalloffScale", falloff);
     }
+    ImGui::TextColored( ImVec4( 1.0f, 0.8f, 0.0f, 1.0f ), "*(Adjusting falloff needs /vid_restart)" );
 
     float lightScale = r_rtSurfaceLightScale->value;
     if (ImGui::SliderFloat("Surface Light Scale", &lightScale, 0.0f, 10.0f)) {

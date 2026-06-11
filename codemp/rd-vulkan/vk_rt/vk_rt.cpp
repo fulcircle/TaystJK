@@ -711,50 +711,6 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 		tess.numVertexes = 0;
 		tess.numIndexes = 0;
 	}
-	/*
-		* for each cluster:
-		*   for each light:
-		*		get this light's cluster
-		*       if this light's cluster is in the PVS of this outer-loop cluster
-		*          add light to PVS set for this cluster
-	*/
-
-	arena_t lightListLights = { 0 };
-	arena_t lightListOffsets = { 0 };
-
-	uint32_t *lightHomeClusters = GetBuffer(&lightClusters, uint32_t);
-
-	for ( int targetCluster = 0; targetCluster < worldData.numClusters; targetCluster++ ) {
-		// Record the start index for targetCluster's light list
-		uint32_t *offsetSlot = PushStruct(&lightListOffsets, uint32_t);
-		*offsetSlot = lightListLights.numElements;
-
-		const byte *pvs = ri.CM_ClusterPVS(targetCluster);
-
-		for ( int lightIndex = 0; lightIndex < (int)lights.numElements; lightIndex++ ) {
-			uint32_t lightHomeCluster = lightHomeClusters[lightIndex];
-
-			// Check PVS visibility between the light's home cluster and our target cluster
-			if ( pvs == NULL || ( pvs[lightHomeCluster >> 3] & ( 1 << ( lightHomeCluster & 7 ) ) ) != 0 ) {
-				uint32_t *lightListSlot = PushStruct(&lightListLights, uint32_t);
-				*lightListSlot = lightIndex;
-			}
-		}
-	}
-
-	// Record the final offset to define the end of the last cluster's light list
-	uint32_t *finalOffsetSlot = PushStruct(&lightListOffsets, uint32_t);
-	*finalOffsetSlot = lightListLights.numElements;
-
-	worldData.numStaticLights = lights.numElements;
-	worldData.rtStaticLights = NULL;
-	if (lights.numElements > 0) {
-		worldData.rtStaticLights =
-			(rtLight_t *)Hunk_Alloc( lights.used, h_low );
-	
-		memcpy( worldData.rtStaticLights, GetBuffer(&lights, rtLight_t), lights.used);
-
-	}
 
 	rtAABB_t *clusterAABBs = (rtAABB_t *)Z_Malloc(worldData.numClusters * sizeof(rtAABB_t), TAG_TEMP_WORKSPACE, qtrue, __alignof(rtAABB_t));
 	for (int i = 0; i < worldData.numClusters; i++) {
@@ -783,7 +739,98 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 		}
 	}
 
-	/* for each */
+	/*
+		* for each cluster:
+		*   for each light:
+		*		get this light's cluster
+		*       if this light's cluster is in the PVS of this outer-loop cluster
+		*          add light to PVS set for this cluster
+	*/
+
+	arena_t lightListLights = { 0 };
+	arena_t lightListOffsets = { 0 };
+
+	uint32_t *lightHomeClusters = GetBuffer(&lightClusters, uint32_t);
+	rtLight_t *lights_buffer = GetBuffer(&lights, rtLight_t);
+
+	for ( int targetCluster = 0; targetCluster < worldData.numClusters; targetCluster++ ) {
+		// Record the start index for targetCluster's light list
+		uint32_t *offsetSlot = PushStruct(&lightListOffsets, uint32_t);
+		*offsetSlot = lightListLights.numElements;
+
+		const byte *pvs = ri.CM_ClusterPVS(targetCluster);
+
+		for ( int lightIndex = 0; lightIndex < (int)lights.numElements; lightIndex++ ) {
+			uint32_t lightHomeCluster = lightHomeClusters[lightIndex];
+
+			// --- Check 1: PVS Visibility Check ---
+			if ( pvs == NULL || ( pvs[lightHomeCluster >> 3] & ( 1 << ( lightHomeCluster & 7 ) ) ) != 0 ) {
+				rtLight_t *light = &lights_buffer[lightIndex];
+
+				 const float *mins = clusterAABBs[targetCluster].mins;
+				 const float *maxs = clusterAABBs[targetCluster].maxs;
+
+				 // --- Check 2: Plane Culling Check (Back-Facing Cull) ---
+				 // p = farthest point along the direction of normal (p-vertex)
+				 vec3_t p;
+				 p[0] = (light->normal[0] >= 0.0f) ? maxs[0] : mins[0];
+				 p[1] = (light->normal[1] >= 0.0f) ? maxs[1] : mins[1];
+				 p[2] = (light->normal[2] >= 0.0f) ? maxs[2] : mins[2];
+
+				  vec3_t dir;
+				  VectorSubtract(p, light->positions, dir); // dir = p - light->positions (first vertex)
+				  if (DotProduct(light->normal, dir) < 0.0f) {
+					  continue; // Cull: behind the light's plane
+				  }
+
+				  // --- Check 3: Distance Culling Check (Sphere-Box Intersection) ---
+				  // Find shortest squared distance from the AABB to the light's centroid
+				  float sqDist = 0.0f;
+				  for ( int axis = 0; axis < 3; axis++ ) {
+					  float centroidVal = light->lightCentroid[axis];
+					  if ( centroidVal < mins[axis] ) {
+						  float d = mins[axis] - centroidVal;
+						  sqDist += d * d;
+					  } else if ( centroidVal > maxs[axis] ) {
+						  float d = centroidVal - maxs[axis];
+						  sqDist += d * d;
+					  }
+				  }
+
+				  /* light sphere radius */
+				  float maxIntensity = MAX(MAX(light->color[0], light->color[1]), light->color[2]);
+				  float cullRadiusSq = maxIntensity * r_rtFalloffScale->value * 20.0f;
+
+				  if (cullRadiusSq > 4000000.0f) {
+					  cullRadiusSq = 4000000.0f;
+				  }
+
+				  float cullRadius = sqrtf(cullRadiusSq);
+				  float totalRadius = cullRadius + light->boundingRadius;
+
+				  if ( sqDist > totalRadius * totalRadius ) {
+					  continue; // Cull: too far away!
+				  }
+
+				 uint32_t *lightListSlot = PushStruct(&lightListLights, uint32_t);
+				 *lightListSlot = lightIndex;
+			}
+		}
+	}
+
+	// Record the final offset to define the end of the last cluster's light list
+	uint32_t *finalOffsetSlot = PushStruct(&lightListOffsets, uint32_t);
+	*finalOffsetSlot = lightListLights.numElements;
+
+	worldData.numStaticLights = lights.numElements;
+	worldData.rtStaticLights = NULL;
+	if (lights.numElements > 0) {
+		worldData.rtStaticLights =
+			(rtLight_t *)Hunk_Alloc( lights.used, h_low );
+	
+		memcpy( worldData.rtStaticLights, GetBuffer(&lights, rtLight_t), lights.used);
+
+	}
 
 	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lights.numElements, numsurfaces );
 	
