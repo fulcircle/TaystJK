@@ -188,6 +188,7 @@ cvar_t	*r_rtSurfaceLightScale;
 cvar_t	*r_rtFalloffScale;
 cvar_t	*r_rtEnable;
 cvar_t	*r_rtLightCullRadius;
+cvar_t	*r_rtUseClusters;
 
 //cvar_t	*r_stencilbits;
 cvar_t	*r_ext_multisample;
@@ -886,6 +887,7 @@ void R_Register( void )
 	r_rtFalloffScale					= ri.Cvar_Get( "r_rtFalloffScale",					"2.0",						CVAR_CHEAT, "RT: scale falloff of light intensity" );
 	r_rtEnable							= ri.Cvar_Get( "r_rtEnable",						"1",						CVAR_CHEAT, "RT: 1 = direct lighting on, 0 = bypass (show lightmap/fullbright)" );
 	r_rtLightCullRadius					= ri.Cvar_Get( "r_rtLightCullRadius",				"2048.0",					CVAR_CHEAT, "RT: distance radius within which to cull active lights" );
+	r_rtUseClusters						= ri.Cvar_Get( "r_rtUseClusters",					"1",						CVAR_CHEAT, "RT: 1 = enable spatiotemporal cluster culling lists, 0 = sample globally" );
 
 	r_distanceCull						= ri.Cvar_Get( "r_distanceCull",					"0",						CVAR_ARCHIVE_ND, "" );
 	r_portalOnly						= ri.Cvar_Get( "r_portalOnly",						"0",						CVAR_CHEAT, "" );

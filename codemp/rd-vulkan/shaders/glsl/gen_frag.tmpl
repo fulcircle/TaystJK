@@ -165,7 +165,7 @@ layout(set = 5, binding = 2) uniform RtParams {
     uint  u_numLights; // valid light count (binding 1 may hold a dummy element)
     uint  u_rtEnable; // 0 = bypass RT direct lighting (show lightmap/fullbright)
     uint  u_frameCount;
-    uint  u_unused;
+    uint  u_useClusters;
     uint  u_padding;
     uint  u_readIndex;
     uint  u_writeIndex;
@@ -189,6 +189,28 @@ layout(std430, set = 5, binding = 3) buffer ReservoirBuf0 {
 
 layout(std430, set = 5, binding = 4) buffer ReservoirBuf1 {
     Reservoir reservoirs1[];
+};
+
+struct BspNode {
+    vec4 plane;
+    int children[2];
+    int padding[2];
+};
+
+layout(std430, set = 5, binding = 5) readonly buffer LightListOffsets {
+    uint lightListOffsets[];
+};
+
+layout(std430, set = 5, binding = 6) readonly buffer LightListLights {
+    uint lightListLights[];
+};
+
+layout(std430, set = 5, binding = 7) readonly buffer BspNodes {
+    BspNode bspNodes[];
+};
+
+layout(std430, set = 5, binding = 8) readonly buffer BspLeaves {
+    int bspLeaves[];
 };
 
 struct LocalReservoir {
@@ -217,6 +239,30 @@ float eval_p_hat(uint lightIndex, vec3 pos, vec3 normal) {
 layout(push_constant) uniform EmitterPC {
     layout(offset = 64) int u_isEmitter;
 };
+
+int get_cluster_index(vec3 worldPos) {
+    int nodeIdx = 0;
+    
+    // Safety cap to prevent GPU hangs
+    for (int i = 0; i < 128; i++) {
+        BspNode node = bspNodes[nodeIdx];
+        
+        // Check which side of the plane the point is on
+        float dist = dot(worldPos, node.plane.xyz) - node.plane.w;
+        int nextIndex = (dist >= 0.0) ? node.children[0] : node.children[1];
+        
+        if (nextIndex < 0) {
+            // Decoded negative index points to the bspLeaves buffer
+            int leafIndex = -1 - nextIndex;
+            return bspLeaves[leafIndex];
+        }
+        
+        // Move to the next decision node
+        nodeIdx = nextIndex;
+    }
+    
+    return -1; // Failed to find cluster (safety limit hit)
+}
 
 void initReservoir(out LocalReservoir r) {
     r.lightIndex = 0xFFFFFFFFu; // Invalid light ID
@@ -877,20 +923,37 @@ void main() {
     if (u_isEmitter == 0 && rt_direct_lighting == 1 && u_rtEnable != 0u && u_numLights > 0u) {
         uint seed = rand_seed(uvec2(gl_FragCoord.xy), u_frameCount);
 
-        int num_random_lights = 3;
-        float q = 1.0 / u_numLights;
+        int clusterId = get_cluster_index(var_WorldPos);
+        uint numLightsToSample = u_numLights;
+        bool useClusterList = false;
+        uint startOffset = 0u;
+
+        if (u_useClusters != 0u && clusterId >= 0) {
+            startOffset = lightListOffsets[clusterId];
+            uint endOffset = lightListOffsets[clusterId + 1];
+            numLightsToSample = endOffset - startOffset;
+            useClusterList = true;
+        }
 
         LocalReservoir r;
         initReservoir(r);
 
-        // 1. Initial Candidate Resampling (RIS)
-        for (int i = 0; i < 3; i++) {
-            float rand = rand_next(seed);
-            uint rand_index = uint(floor(rand * u_numLights));
-            vec2 sampleUV = vec2(rand_next(seed), rand_next(seed));
-            float p_hat = eval_p_hat(rand_index, var_WorldPos, worldNormal);
-            float weight = p_hat * u_numLights;
-            updateReservoir(r, rand_index, weight, p_hat, rand_next(seed), sampleUV);
+        if (numLightsToSample > 0u) {
+            // 1. Initial Candidate Resampling (RIS)
+            for (int i = 0; i < 3; i++) {
+                float rand = rand_next(seed);
+                uint rand_index;
+                if (useClusterList) {
+                    uint slot = uint(floor(rand * numLightsToSample));
+                    rand_index = lightListLights[startOffset + slot];
+                } else {
+                    rand_index = uint(floor(rand * numLightsToSample));
+                }
+                vec2 sampleUV = vec2(rand_next(seed), rand_next(seed));
+                float p_hat = eval_p_hat(rand_index, var_WorldPos, worldNormal);
+                float weight = p_hat * numLightsToSample;
+                updateReservoir(r, rand_index, weight, p_hat, rand_next(seed), sampleUV);
+            }
         }
 
         // 2. Temporal Reprojection & Reuse

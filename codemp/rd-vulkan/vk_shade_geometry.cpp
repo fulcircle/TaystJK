@@ -678,6 +678,9 @@ void vk_init_descriptors( void ) {
 
 		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &alloc, &vk.descriptor_rt_empty ) );
 		VK_SET_OBJECT_NAME( vk.descriptor_rt_empty, "rt empty descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT);
+
+		R_rtInitDescriptorSet( vk.descriptor_rt );
+		R_rtInitDescriptorSet( vk.descriptor_rt_empty );
 	}
 }
 

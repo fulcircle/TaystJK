@@ -57,11 +57,17 @@ static void vk_push_layout_binding( VkDescriptorSetLayoutBinding *bind, VkDescri
     bind[binding].pImmutableSamplers = NULL;
 }
 
+#define VK_MAX_LAYOUT_BINDINGS 32 // Separate from VK_DESC_UNIFORM_COUNT to prevent stack overflow when binding counts exceed 6 (e.g., ray query with 9 bindings)
+
 static void vk_create_layout_bindings( uint32_t numBindings, VkDescriptorType *types,
 	VkShaderStageFlags flags, VkDescriptorSetLayout *layout ) {
 
-		VkDescriptorSetLayoutBinding bind[VK_DESC_UNIFORM_COUNT];
+		VkDescriptorSetLayoutBinding bind[VK_MAX_LAYOUT_BINDINGS];
 	    VkDescriptorSetLayoutCreateInfo desc;
+
+		if ( numBindings > VK_MAX_LAYOUT_BINDINGS ) {
+			ri.Error( ERR_DROP, "vk_create_layout_bindings: numBindings (%u) exceeds maximum supported (%d)", numBindings, VK_MAX_LAYOUT_BINDINGS );
+		}
 
 		for (uint32_t i = 0; i < numBindings; i++) {
 		    vk_push_layout_binding( bind, types[i], i, flags );
@@ -132,7 +138,7 @@ void vk_create_descriptor_layout( void )
 			pool_size[3].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			pool_size[3].descriptorCount = 2;	// world TLAS + empty TLAS
 			pool_size[4].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-			pool_size[4].descriptorCount = 6;
+			pool_size[4].descriptorCount = 14;
 
 			pool_size[5].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			pool_size[5].descriptorCount = 2;
@@ -160,13 +166,17 @@ void vk_create_descriptor_layout( void )
         vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage, qfalse );
 
         if ( vk.rayQuery ) {
-	       	VkDescriptorType types[5];
+	       	VkDescriptorType types[9];
 			types[0] = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			types[2] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			types[3] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			types[4] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	       	vk_create_layout_bindings( 5, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
+			types[5] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+			types[6] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+			types[7] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+			types[8] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	       	vk_create_layout_bindings( 9, types, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_rt);
         }
     }
 }

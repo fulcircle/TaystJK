@@ -1952,6 +1952,7 @@ extern cvar_t	*r_rtSurfaceLightScale;
 extern cvar_t	*r_rtFalloffScale;
 extern cvar_t	*r_rtEnable;
 extern cvar_t	*r_rtLightCullRadius;
+extern cvar_t	*r_rtUseClusters;
 
 extern cvar_t	*r_ext_multisample;
 extern cvar_t	*r_ext_supersample;
@@ -2682,6 +2683,7 @@ extern void R_BuildWorldVBO( msurface_t *surf, int surfCount );
 extern void R_rtBuildWorldGeometryBuffers( msurface_t *surf, int surfCount );
 extern void R_rtBuildWorldLights( world_t &worldData );
 extern void R_rtUpdateParams ( void );
+extern void R_rtInitDescriptorSet( VkDescriptorSet set );
 extern void R_BuildSurfaceSpritesVBO( const world_t &worldData, int index ) ;
 extern void R_BuildMDXM( model_t *mod, mdxmHeader_t *mdxm );
 extern void R_BuildMD3( model_t *mod, mdvModel_t *mdvModel );

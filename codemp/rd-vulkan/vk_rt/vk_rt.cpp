@@ -15,13 +15,19 @@ static float prevFrameCount = 0;
 static qboolean prevMvpValid = qfalse;
 
 typedef struct {
+	float plane[4];
+	int32_t children[2];
+	uint32_t padding[2];
+} gpuBspNode_t;
+
+typedef struct {
 	float						prevMvp[16];
 	float 						falloffScale;
 	float						surfaceLightScale;
 	uint32_t					numLights;
 	uint32_t					rtEnable;		// 0 = bypass RT direct lighting (lightmap/fullbright)
 	uint32_t					frameCount;
-	uint32_t					unused;
+	uint32_t					useClusters;
 	uint32_t					padding;
 	uint32_t					readIndex;
 	uint32_t					writeIndex;
@@ -75,15 +81,204 @@ typedef struct {
 	VkDeviceMemory			   reservoirMemory[2];
 	uint32_t				   currentReservoirWriteIndex;
 
+	// BSP data
+	VkBuffer                   bspNodesBuffer;
+	VkBuffer				   bspLeavesBuffer;
+	VkBuffer                   lightListOffsetsBuffer;
+	VkBuffer				   lightListLightsBuffer;
+
+	VkDeviceMemory             bspNodesMemory;
+	VkDeviceMemory             bspLeavesMemory;
+	VkDeviceMemory             lightListOffsetsMemory;
+	VkDeviceMemory             lightListLightsMemory;
+
+	// Dummy fallback resources
+	VkBuffer                   dummyBuffer;
+	VkDeviceMemory             dummyMemory;
+	VkAccelerationStructureKHR dummyTlas;
+	VkBuffer                   dummyTlasBuffer;
+	VkDeviceMemory             dummyTlasMemory;
+
 } world_rt_t;
 
 static world_rt_t world_rt;
+
+static void vk_rt_create_buffer( VkDeviceSize size, VkBufferUsageFlags usage,
+	VkMemoryPropertyFlags properties, qboolean deviceAddress,
+	VkBuffer *outBuffer, VkDeviceMemory *outMemory );
+
+static void vk_rt_create_dummy_resources( void ) {
+	if ( world_rt.dummyBuffer != VK_NULL_HANDLE ) {
+		return;
+	}
+
+	// Create a 64-byte dummy buffer
+	vk_rt_create_buffer( 64, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, &world_rt.dummyBuffer, &world_rt.dummyMemory );
+
+	// Upload zeroed data to dummy buffer
+	uint8_t zeroData[64] = { 0 };
+	VkBuffer staging; VkDeviceMemory stagingMem;
+	vk_rt_create_buffer( 64, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		qfalse, &staging, &stagingMem );
+	void *data;
+	VK_CHECK( qvkMapMemory( vk.device, stagingMem, 0, VK_WHOLE_SIZE, 0, &data ) );
+	memcpy( data, zeroData, 64 );
+	qvkUnmapMemory( vk.device, stagingMem );
+
+	VkCommandBuffer cmd = vk_begin_command_buffer();
+	VkBufferCopy region = { 0, 0, 64 };
+	qvkCmdCopyBuffer( cmd, staging, world_rt.dummyBuffer, 1, &region );
+	vk_end_command_buffer( cmd, __func__ );
+
+	qvkDestroyBuffer( vk.device, staging, NULL );
+	qvkFreeMemory( vk.device, stagingMem, NULL );
+
+	// Create dummy TLAS (0 instances)
+	VkAccelerationStructureGeometryKHR geom;
+	Com_Memset( &geom, 0, sizeof(geom) );
+	geom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+	geom.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+	geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+	geom.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+	geom.geometry.instances.arrayOfPointers = VK_FALSE;
+	geom.geometry.instances.data.deviceAddress = 0;
+
+	VkAccelerationStructureBuildGeometryInfoKHR buildInfo;
+	Com_Memset( &buildInfo, 0, sizeof(buildInfo) );
+	buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+	buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+	buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	buildInfo.geometryCount = 1;
+	buildInfo.pGeometries = &geom;
+
+	uint32_t instCount = 0;
+	VkAccelerationStructureBuildSizesInfoKHR sizeInfo;
+	Com_Memset( &sizeInfo, 0, sizeof(sizeInfo) );
+	sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+	qvkGetAccelerationStructureBuildSizesKHR( vk.device,
+		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &instCount, &sizeInfo );
+
+	vk_rt_create_buffer( sizeInfo.accelerationStructureSize,
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qfalse, &world_rt.dummyTlasBuffer, &world_rt.dummyTlasMemory );
+
+	VkAccelerationStructureCreateInfoKHR ec;
+	Com_Memset( &ec, 0, sizeof(ec) );
+	ec.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+	ec.buffer = world_rt.dummyTlasBuffer;
+	ec.size = sizeInfo.accelerationStructureSize;
+	ec.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+	VK_CHECK( qvkCreateAccelerationStructureKHR( vk.device, &ec, NULL, &world_rt.dummyTlas ) );
+
+	VkBuffer es; VkDeviceMemory esm;
+	VkBufferDeviceAddressInfo esa;
+	VkAccelerationStructureBuildRangeInfoKHR er;
+	const VkAccelerationStructureBuildRangeInfoKHR *epr = &er;
+	VkCommandBuffer ecmd;
+
+	vk_rt_create_buffer( sizeInfo.buildScratchSize > 0 ? sizeInfo.buildScratchSize : 64,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, qtrue, &es, &esm );
+	esa.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	esa.pNext = NULL;
+	esa.buffer = es;
+
+	buildInfo.dstAccelerationStructure = world_rt.dummyTlas;
+	buildInfo.scratchData.deviceAddress = qvkGetBufferDeviceAddress( vk.device, &esa );
+
+	er.primitiveCount = 0;
+	er.primitiveOffset = 0; er.firstVertex = 0; er.transformOffset = 0;
+
+	ecmd = vk_begin_command_buffer();
+	qvkCmdBuildAccelerationStructuresKHR( ecmd, 1, &buildInfo, &epr );
+	vk_end_command_buffer( ecmd, __func__ );
+
+	qvkDestroyBuffer( vk.device, es, NULL );
+	qvkFreeMemory( vk.device, esm, NULL );
+}
+
+static void vk_rt_destroy_dummy_resources( void ) {
+	if ( world_rt.dummyTlas ) {
+		qvkDestroyAccelerationStructureKHR( vk.device, world_rt.dummyTlas, NULL );
+		world_rt.dummyTlas = VK_NULL_HANDLE;
+	}
+	if ( world_rt.dummyTlasBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.dummyTlasBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.dummyTlasMemory, NULL );
+		world_rt.dummyTlasBuffer = VK_NULL_HANDLE;
+		world_rt.dummyTlasMemory = VK_NULL_HANDLE;
+	}
+	if ( world_rt.dummyBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.dummyBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.dummyMemory, NULL );
+		world_rt.dummyBuffer = VK_NULL_HANDLE;
+		world_rt.dummyMemory = VK_NULL_HANDLE;
+	}
+}
+
+void R_rtInitDescriptorSet( VkDescriptorSet set ) {
+	if ( !vk.rayQuery ) {
+		return;
+	}
+
+	vk_rt_create_dummy_resources();
+
+	// 1. Write Binding 0 (TLAS)
+	{
+		VkWriteDescriptorSetAccelerationStructureKHR asInfo;
+		VkWriteDescriptorSet write;
+
+		asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+		asInfo.pNext = NULL;
+		asInfo.accelerationStructureCount = 1;
+		asInfo.pAccelerationStructures = &world_rt.dummyTlas;
+
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.pNext = &asInfo;
+		write.dstSet = set;
+		write.dstBinding = 0;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+		write.pImageInfo = NULL;
+		write.pBufferInfo = NULL;
+		write.pTexelBufferView = NULL;
+
+		qvkUpdateDescriptorSets( vk.device, 1, &write, 0, NULL );
+	}
+
+	// 2. Write Bindings 1-8 (Buffers)
+	VkDescriptorBufferInfo bufInfo[8];
+	VkWriteDescriptorSet   write[8];
+
+	for ( int i = 0; i < 8; i++ ) {
+		bufInfo[i].buffer = world_rt.dummyBuffer;
+		bufInfo[i].offset = 0;
+		bufInfo[i].range  = VK_WHOLE_SIZE;
+
+		write[i].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write[i].pNext            = NULL;
+		write[i].dstSet           = set;
+		write[i].dstBinding       = 1 + i;
+		write[i].dstArrayElement  = 0;
+		write[i].descriptorCount  = 1;
+		write[i].descriptorType   = ( (1 + i) == 2 ) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		write[i].pImageInfo       = NULL;
+		write[i].pBufferInfo      = &bufInfo[i];
+		write[i].pTexelBufferView = NULL;
+	}
+
+	qvkUpdateDescriptorSets( vk.device, 8, write, 0, NULL );
+}
 
 static void vk_rt_write_params_descriptor( VkDescriptorSet set) {
 	VkDescriptorBufferInfo bufInfo;
 	VkWriteDescriptorSet   write;
 
-	bufInfo.buffer = world_rt.paramsBuffer;
+	bufInfo.buffer = world_rt.paramsBuffer ? world_rt.paramsBuffer : world_rt.dummyBuffer;
 	bufInfo.offset = 0;
 	bufInfo.range  = VK_WHOLE_SIZE;
 
@@ -105,7 +300,7 @@ static void vk_rt_write_light_descriptor( VkDescriptorSet set ) {
 	VkDescriptorBufferInfo bufInfo;
 	VkWriteDescriptorSet   write;
 
-	bufInfo.buffer = world_rt.lightBuffer;
+	bufInfo.buffer = world_rt.lightBuffer ? world_rt.lightBuffer : world_rt.dummyBuffer;
 	bufInfo.offset = 0;
 	bufInfo.range  = VK_WHOLE_SIZE;
 
@@ -212,8 +407,10 @@ static void vk_rt_write_reservoir_buffers( VkDescriptorSet set ) {
 	VkDescriptorBufferInfo bufInfo[2];
 	VkWriteDescriptorSet   write[2];
 
+	vk_rt_create_dummy_resources();
+
 	for ( int i = 0; i < 2; i++ ) {
-		bufInfo[i].buffer = world_rt.reservoirBuffers[i];
+		bufInfo[i].buffer = world_rt.reservoirBuffers[i] ? world_rt.reservoirBuffers[i] : world_rt.dummyBuffer;
 		bufInfo[i].offset = 0;
 		bufInfo[i].range  = VK_WHOLE_SIZE;
 
@@ -230,6 +427,79 @@ static void vk_rt_write_reservoir_buffers( VkDescriptorSet set ) {
 	}
 
 	qvkUpdateDescriptorSets( vk.device, 2, write, 0, NULL );
+}
+
+static void vk_rt_write_bsp_descriptors( VkDescriptorSet set ) {
+	VkDescriptorBufferInfo bufInfo[4];
+	VkWriteDescriptorSet   write[4];
+
+	vk_rt_create_dummy_resources();
+
+	// Binding 5: lightListOffsets
+	bufInfo[0].buffer = world_rt.lightListOffsetsBuffer ? world_rt.lightListOffsetsBuffer : world_rt.dummyBuffer;
+	bufInfo[0].offset = 0;
+	bufInfo[0].range  = VK_WHOLE_SIZE;
+
+	write[0].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write[0].pNext            = NULL;
+	write[0].dstSet           = set;
+	write[0].dstBinding       = 5;
+	write[0].dstArrayElement  = 0;
+	write[0].descriptorCount  = 1;
+	write[0].descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write[0].pImageInfo       = NULL;
+	write[0].pBufferInfo      = &bufInfo[0];
+	write[0].pTexelBufferView = NULL;
+
+	// Binding 6: lightListLights
+	bufInfo[1].buffer = world_rt.lightListLightsBuffer ? world_rt.lightListLightsBuffer : world_rt.dummyBuffer;
+	bufInfo[1].offset = 0;
+	bufInfo[1].range  = VK_WHOLE_SIZE;
+
+	write[1].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write[1].pNext            = NULL;
+	write[1].dstSet           = set;
+	write[1].dstBinding       = 6;
+	write[1].dstArrayElement  = 0;
+	write[1].descriptorCount  = 1;
+	write[1].descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write[1].pImageInfo       = NULL;
+	write[1].pBufferInfo      = &bufInfo[1];
+	write[1].pTexelBufferView = NULL;
+
+	// Binding 7: bspNodes
+	bufInfo[2].buffer = world_rt.bspNodesBuffer ? world_rt.bspNodesBuffer : world_rt.dummyBuffer;
+	bufInfo[2].offset = 0;
+	bufInfo[2].range  = VK_WHOLE_SIZE;
+
+	write[2].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write[2].pNext            = NULL;
+	write[2].dstSet           = set;
+	write[2].dstBinding       = 7;
+	write[2].dstArrayElement  = 0;
+	write[2].descriptorCount  = 1;
+	write[2].descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write[2].pImageInfo       = NULL;
+	write[2].pBufferInfo      = &bufInfo[2];
+	write[2].pTexelBufferView = NULL;
+
+	// Binding 8: bspLeaves
+	bufInfo[3].buffer = world_rt.bspLeavesBuffer ? world_rt.bspLeavesBuffer : world_rt.dummyBuffer;
+	bufInfo[3].offset = 0;
+	bufInfo[3].range  = VK_WHOLE_SIZE;
+
+	write[3].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write[3].pNext            = NULL;
+	write[3].dstSet           = set;
+	write[3].dstBinding       = 8;
+	write[3].dstArrayElement  = 0;
+	write[3].descriptorCount  = 1;
+	write[3].descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write[3].pImageInfo       = NULL;
+	write[3].pBufferInfo      = &bufInfo[3];
+	write[3].pTexelBufferView = NULL;
+
+	qvkUpdateDescriptorSets( vk.device, 4, write, 0, NULL );
 }
 
 static void vk_rt_create_params_buffer( void )
@@ -618,6 +888,25 @@ void vk_rt_release_world( void )
 		}
 	}
 
+	if ( world_rt.bspNodesBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.bspNodesBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.bspNodesMemory, NULL );
+	}
+	if ( world_rt.bspLeavesBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.bspLeavesBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.bspLeavesMemory, NULL );
+	}
+	if ( world_rt.lightListOffsetsBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.lightListOffsetsBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.lightListOffsetsMemory, NULL );
+	}
+	if ( world_rt.lightListLightsBuffer ) {
+		qvkDestroyBuffer( vk.device, world_rt.lightListLightsBuffer, NULL );
+		qvkFreeMemory( vk.device, world_rt.lightListLightsMemory, NULL );
+	}
+
+	vk_rt_destroy_dummy_resources();
+
 	prevFrameCount = 0;
 	prevMvpValid = qfalse;
 	Com_Memset( prevMvp, 0, sizeof(prevMvp) );
@@ -832,6 +1121,55 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 
 	}
 
+	if ( vk.rayQuery ) {
+		// 1. Upload BSP Decision Nodes
+		if ( worldData.numDecisionNodes > 0 ) {
+			gpuBspNode_t *gpuNodes = (gpuBspNode_t *)Z_Malloc( worldData.numDecisionNodes * sizeof(gpuBspNode_t), TAG_TEMP_WORKSPACE, qtrue );
+			for ( int i = 0; i < worldData.numDecisionNodes; i++ ) {
+				mnode_t *node = &worldData.nodes[i];
+				gpuNodes[i].plane[0] = node->plane->normal[0];
+				gpuNodes[i].plane[1] = node->plane->normal[1];
+				gpuNodes[i].plane[2] = node->plane->normal[2];
+				gpuNodes[i].plane[3] = node->plane->dist;
+
+				for ( int j = 0; j < 2; j++ ) {
+					int childIndex = node->children[j] - worldData.nodes;
+					if ( childIndex < worldData.numDecisionNodes ) {
+						gpuNodes[i].children[j] = childIndex;
+					} else {
+						gpuNodes[i].children[j] = -1 - (childIndex - worldData.numDecisionNodes);
+					}
+				}
+			}
+			vk_rt_upload_buffer( worldData.numDecisionNodes * sizeof(gpuBspNode_t), gpuNodes,
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.bspNodesBuffer, &world_rt.bspNodesMemory );
+			Z_Free( gpuNodes );
+		}
+
+		// 2. Upload BSP Leaf Nodes (Cluster IDs)
+		int numLeaves = worldData.numnodes - worldData.numDecisionNodes;
+		if ( numLeaves > 0 ) {
+			int32_t *gpuLeaves = (int32_t *)Z_Malloc( numLeaves * sizeof(int32_t), TAG_TEMP_WORKSPACE, qtrue );
+			for ( int i = 0; i < numLeaves; i++ ) {
+				mnode_t *node = &worldData.nodes[worldData.numDecisionNodes + i];
+				gpuLeaves[i] = node->cluster;
+			}
+			vk_rt_upload_buffer( numLeaves * sizeof(int32_t), gpuLeaves,
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.bspLeavesBuffer, &world_rt.bspLeavesMemory );
+			Z_Free( gpuLeaves );
+		}
+
+		// 3. Upload Light List Offsets and Culled Light Lists
+		if ( lightListOffsets.used > 0 ) {
+			vk_rt_upload_buffer( lightListOffsets.used, GetBuffer(&lightListOffsets, uint32_t),
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightListOffsetsBuffer, &world_rt.lightListOffsetsMemory );
+		}
+		if ( lightListLights.used > 0 ) {
+			vk_rt_upload_buffer( lightListLights.used, GetBuffer(&lightListLights, uint32_t),
+				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &world_rt.lightListLightsBuffer, &world_rt.lightListLightsMemory );
+		}
+	}
+
 	ri.Printf( PRINT_ALL, "RT: synthesized %u surface lights from %u surfaces\n", lights.numElements, numsurfaces );
 	
 	Clear(&lights);
@@ -869,6 +1207,9 @@ static void R_rtBuildWorldLightBuffers( rtLight_t *staticLights, uint32_t numLig
 
 	vk_rt_write_light_descriptor( vk.descriptor_rt );
 	vk_rt_write_light_descriptor(vk.descriptor_rt_empty);
+
+	vk_rt_write_bsp_descriptors( vk.descriptor_rt );
+	vk_rt_write_bsp_descriptors( vk.descriptor_rt_empty );
 }
 
 void R_rtBuildWorldLights( world_t &worldData ) {
@@ -1057,7 +1398,7 @@ void R_rtUpdateParams( void ) {
 	world_rt.rtParams->surfaceLightScale = r_rtSurfaceLightScale->value;
 	world_rt.rtParams->frameCount = tr.frameCount;
 	world_rt.rtParams->numLights = activeCount;
-	world_rt.rtParams->unused = 0;
+	world_rt.rtParams->useClusters = r_rtUseClusters->integer;
 	world_rt.rtParams->readIndex = tr.frameCount % 2;
 	world_rt.rtParams->writeIndex = (tr.frameCount + 1) % 2;
 	world_rt.rtParams->width = glConfig.vidWidth;
