@@ -1062,20 +1062,7 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 				 const float *mins = clusterAABBs[targetCluster].mins;
 				 const float *maxs = clusterAABBs[targetCluster].maxs;
 
-				 // --- Check 2: Plane Culling Check (Back-Facing Cull) ---
-				 // p = farthest point along the direction of normal (p-vertex)
-				 vec3_t p;
-				 p[0] = (light->normal[0] >= 0.0f) ? maxs[0] : mins[0];
-				 p[1] = (light->normal[1] >= 0.0f) ? maxs[1] : mins[1];
-				 p[2] = (light->normal[2] >= 0.0f) ? maxs[2] : mins[2];
-
-				  vec3_t dir;
-				  VectorSubtract(p, light->positions, dir); // dir = p - light->positions (first vertex)
-				  if (DotProduct(light->normal, dir) < 0.0f) {
-					  continue; // Cull: behind the light's plane
-				  }
-
-				  // --- Check 3: Distance Culling Check (Sphere-Box Intersection) ---
+				  // --- Check 2: Distance Culling Check (Sphere-Box Intersection) ---
 				  // Find shortest squared distance from the AABB to the light's centroid
 				  float sqDist = 0.0f;
 				  for ( int axis = 0; axis < 3; axis++ ) {
@@ -1089,9 +1076,9 @@ static void R_rtGenerateWorldLights( world_t &worldData ) {
 					  }
 				  }
 
-				  /* light sphere radius */
+				  /* light sphere radius (cull when light contribution drops below ~0.001) */
 				  float maxIntensity = MAX(MAX(light->color[0], light->color[1]), light->color[2]);
-				  float cullRadiusSq = maxIntensity * r_rtFalloffScale->value * 20.0f;
+				  float cullRadiusSq = maxIntensity * r_rtFalloffScale->value * 1000.0f;
 
 				  if (cullRadiusSq > 4000000.0f) {
 					  cullRadiusSq = 4000000.0f;
@@ -1356,54 +1343,7 @@ void R_rtUpdateParams( void ) {
 		prevMvpValid = qtrue;
 	}
 
-	// CPU culling of static lights based on camera distance
-	int activeCount = 0;
-	if ( tr.world && tr.world->numStaticLights > 0 && world_rt.mappedLights != NULL ) {
-		vec3_t camOrigin;
-		VectorCopy( backEnd.viewParms.ori.origin, camOrigin );
-		float cullRad = r_rtLightCullRadius->value;
-		qboolean bypassCull = (cullRad <= 0.0f) ? qtrue : qfalse;
-
-		struct CulledLight {
-			rtLight_t* light;
-			float dist;
-		};
-		static CulledLight culled[MAX_RT_LIGHTS];
-		int culledCount = 0;
-
-		for ( int i = 0; i < (int)tr.world->numStaticLights; i++ ) {
-			rtLight_t *light = &tr.world->rtStaticLights[i];
-
-			float dx = camOrigin[0] - light->lightCentroid[0];
-			float dy = camOrigin[1] - light->lightCentroid[1];
-			float dz = camOrigin[2] - light->lightCentroid[2];
-			float dist = sqrtf( dx * dx + dy * dy + dz * dz );
-
-			if ( bypassCull || dist <= cullRad + light->boundingRadius ) {
-				culled[culledCount].light = light;
-				culled[culledCount].dist = dist;
-				culledCount++;
-				if ( culledCount >= MAX_RT_LIGHTS ) {
-					break;
-				}
-			}
-		}
-
-		if ( culledCount > 0 ) {
-			qsort( culled, culledCount, sizeof( CulledLight ), []( const void *a, const void *b ) -> int {
-				float distA = ((const CulledLight*)a)->dist;
-				float distB = ((const CulledLight*)b)->dist;
-				return (distA < distB) ? -1 : ((distA > distB) ? 1 : 0);
-			} );
-
-			for ( int i = 0; i < culledCount; i++ ) {
-				Com_Memcpy( &world_rt.mappedLights[i], culled[i].light, sizeof(rtLight_t) );
-			}
-			activeCount = culledCount;
-		} else {
-			Com_Memset( world_rt.mappedLights, 0, sizeof(rtLight_t) );
-		}
-	}
+	int activeCount = world_rt.numLights;
 
 	world_rt.rtParams->rtEnable = r_rtEnable->integer;
 	world_rt.rtParams->falloffScale = r_rtFalloffScale->value;

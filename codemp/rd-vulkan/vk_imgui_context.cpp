@@ -164,12 +164,6 @@ void vk_imgui_draw( void ) {
         ri.Cvar_SetValue("r_rtSurfaceLightScale", lightScale);
     }
 
-    float cullRadius = r_rtLightCullRadius->value;
-    const char* format = (cullRadius <= 0.0f) ? "Infinite" : "%.0f";
-    if (ImGui::SliderFloat("Light Cull Radius", &cullRadius, 0.0f, 32768.0f, format)) {
-        ri.Cvar_SetValue("r_rtLightCullRadius", cullRadius);
-    }
-
     ImGui::End();
 
     ImGui::Render();

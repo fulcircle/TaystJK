@@ -1951,7 +1951,6 @@ extern cvar_t	*r_device;
 extern cvar_t	*r_rtSurfaceLightScale;
 extern cvar_t	*r_rtFalloffScale;
 extern cvar_t	*r_rtEnable;
-extern cvar_t	*r_rtLightCullRadius;
 extern cvar_t	*r_rtUseClusters;
 
 extern cvar_t	*r_ext_multisample;
